@@ -1,0 +1,35 @@
+{
+  "name": "@wedding/invitation",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "5.2.2",
+    "@wedding/shared": "*",
+    "clsx": "2.1.1",
+    "motion": "12.38.0",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "react-hook-form": "7.75.0",
+    "tailwind-merge": "3.3.0",
+    "zod": "3.25.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.0",
+    "@types/node": "22.15.0",
+    "@types/react": "19.1.0",
+    "@types/react-dom": "19.1.0",
+    "fast-check": "4.8.0",
+    "postcss": "8.5.3",
+    "tailwindcss": "4.3.0",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}

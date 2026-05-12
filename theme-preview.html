@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wedding Digital SaaS - Theme & Color Palette Preview</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; padding: 24px; color: #333; }
+        h1 { text-align: center; margin-bottom: 8px; font-size: 1.8rem; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 32px; }
+        .section-title { font-size: 1.4rem; font-weight: 700; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #ddd; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; margin-bottom: 32px; }
+        .card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border: 2px solid transparent; transition: border-color 0.2s; }
+        .card:hover { border-color: #7c3aed; }
+        .card h3 { margin-bottom: 8px; font-size: 1.1rem; }
+        .card p { color: #666; font-size: 0.85rem; margin-bottom: 16px; }
+        .palette { display: flex; gap: 8px; margin-bottom: 12px; }
+        .swatch { width: 48px; height: 48px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); }
+        .swatch-label { font-size: 0.7rem; color: #888; text-align: center; margin-top: 4px; }
+        .swatch-group { display: flex; flex-direction: column; align-items: center; }
+        .preview-bar { height: 8px; border-radius: 4px; margin-top: 12px; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; margin-right: 4px; }
+
+        .divider { border: none; border-top: 1px solid #e5e5e5; margin: 40px 0; }
+        .note { background: #fffbeb; border: 1px solid #fbbf24; border-radius: 8px; padding: 16px; margin-top: 24px; font-size: 0.85rem; }
+        .note strong { color: #92400e; }
+    </style>
+</head>
+<body>
+
+<h1>🎨 Wedding Digital SaaS — Theme Preview</h1>
+<p class="subtitle">Pilih preferensi color palette untuk Dashboard dan Invitation (Guest Web)</p>
+
+<!-- ==================== DASHBOARD THEMES ==================== -->
+<h2 class="section-title">📊 Dashboard (Client & WO) — Color Palette Options</h2>
+
+<div class="grid">
+    <!-- Dashboard Option A -->
+    <div class="card">
+        <h3>Option A: Modern Purple</h3>
+        <p>Clean, profesional, nuansa ungu modern. Cocok untuk SaaS dashboard yang elegan.</p>
+        <div class="palette">
+            <div class="swatch-group">
+                <div class="swatch" style="background: #7c3aed;"></div>
+                <span class="swatch-label">Primary<br>#7C3AED</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #a78bfa;"></div>
+                <span class="swatch-label">Secondary<br>#A78BFA</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #f59e0b;"></div>
+                <span class="swatch-label">Accent<br>#F59E0B</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #f8fafc;"></div>
+                <span class="swatch-label">Background<br>#F8FAFC</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #1e293b;"></div>
+                <span class="swatch-label">Text<br>#1E293B</span>
+            </div>
+        </div>
+        <div class="preview-bar" style="background: linear-gradient(90deg, #7c3aed, #a78bfa, #f59e0b);"></div>
+        <div style="margin-top: 12px;">
+            <span class="tag" style="background: #ede9fe; color: #7c3aed;">Modern</span>
+            <span class="tag" style="background: #fef3c7; color: #92400e;">Professional</span>
+        </div>
+    </div>
+
+    <!-- Dashboard Option B -->
+    <div class="card">
+        <h3>Option B: Soft Rose</h3>
+        <p>Nuansa rose/pink lembut yang tetap profesional. Cocok untuk industri wedding.</p>
+        <div class="palette">
+            <div class="swatch-group">
+                <div class="swatch" style="background: #e11d48;"></div>
+                <span class="swatch-label">Primary<br>#E11D48</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #fb7185;"></div>
+                <span class="swatch-label">Secondary<br>#FB7185</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #0ea5e9;"></div>
+                <span class="swatch-label">Accent<br>#0EA5E9</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #fff1f2;"></div>
+                <span class="swatch-label">Background<br>#FFF1F2</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #1c1917;"></div>
+                <span class="swatch-label">Text<br>#1C1917</span>
+            </div>
+        </div>
+        <div class="preview-bar" style="background: linear-gradient(90deg, #e11d48, #fb7185, #0ea5e9);"></div>
+        <div style="margin-top: 12px;">
+            <span class="tag" style="background: #ffe4e6; color: #e11d48;">Wedding</span>
+            <span class="tag" style="background: #e0f2fe; color: #0369a1;">Warm</span>
+        </div>
+    </div>
+
+    <!-- Dashboard Option C -->
+    <div class="card">
+        <h3>Option C: Emerald Dark</h3>
+        <p>Dark mode dengan aksen emerald. Tampilan premium dan mudah di mata.</p>
+        <div class="palette">
+            <div class="swatch-group">
+                <div class="swatch" style="background: #10b981;"></div>
+                <span class="swatch-label">Primary<br>#10B981</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #6ee7b7;"></div>
+                <span class="swatch-label">Secondary<br>#6EE7B7</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #f472b6;"></div>
+                <span class="swatch-label">Accent<br>#F472B6</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #0f172a;"></div>
+                <span class="swatch-label">Background<br>#0F172A</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #f1f5f9;"></div>
+                <span class="swatch-label">Text<br>#F1F5F9</span>
+            </div>
+        </div>
+        <div class="preview-bar" style="background: linear-gradient(90deg, #10b981, #6ee7b7, #f472b6);"></div>
+        <div style="margin-top: 12px;">
+            <span class="tag" style="background: #064e3b; color: #6ee7b7;">Dark Mode</span>
+            <span class="tag" style="background: #fce7f3; color: #be185d;">Premium</span>
+        </div>
+    </div>
+</div>
+
+<hr class="divider">
+
+<!-- ==================== INVITATION THEMES ==================== -->
+<h2 class="section-title">💌 Wedding Invitation (Guest Web) — Color Palette Options</h2>
+
+<div class="grid">
+    <!-- Invitation Option A -->
+    <div class="card">
+        <h3>Option A: Classic Sage & Gold</h3>
+        <p>Nuansa sage green dengan aksen gold. Elegan, natural, dan timeless untuk undangan pernikahan.</p>
+        <div class="palette">
+            <div class="swatch-group">
+                <div class="swatch" style="background: #5f7161;"></div>
+                <span class="swatch-label">Primary<br>#5F7161</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #a7c4a0;"></div>
+                <span class="swatch-label">Secondary<br>#A7C4A0</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #c9a96e;"></div>
+                <span class="swatch-label">Accent/Gold<br>#C9A96E</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #fdfcf9;"></div>
+                <span class="swatch-label">Background<br>#FDFCF9</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #2d3436;"></div>
+                <span class="swatch-label">Text<br>#2D3436</span>
+            </div>
+        </div>
+        <div class="preview-bar" style="background: linear-gradient(90deg, #5f7161, #a7c4a0, #c9a96e);"></div>
+        <div style="margin-top: 12px;">
+            <span class="tag" style="background: #ecfdf5; color: #065f46;">Natural</span>
+            <span class="tag" style="background: #fef3c7; color: #92400e;">Elegant</span>
+            <span class="tag" style="background: #f3f4f6; color: #374151;">Timeless</span>
+        </div>
+    </div>
+
+    <!-- Invitation Option B -->
+    <div class="card">
+        <h3>Option B: Romantic Blush</h3>
+        <p>Nuansa blush pink dan dusty rose. Romantis, feminin, dan hangat.</p>
+        <div class="palette">
+            <div class="swatch-group">
+                <div class="swatch" style="background: #c2847a;"></div>
+                <span class="swatch-label">Primary<br>#C2847A</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #e8c4b8;"></div>
+                <span class="swatch-label">Secondary<br>#E8C4B8</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #8b5e3c;"></div>
+                <span class="swatch-label">Accent<br>#8B5E3C</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #fdf8f6;"></div>
+                <span class="swatch-label">Background<br>#FDF8F6</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #3d2c2e;"></div>
+                <span class="swatch-label">Text<br>#3D2C2E</span>
+            </div>
+        </div>
+        <div class="preview-bar" style="background: linear-gradient(90deg, #c2847a, #e8c4b8, #8b5e3c);"></div>
+        <div style="margin-top: 12px;">
+            <span class="tag" style="background: #fce7f3; color: #9d174d;">Romantic</span>
+            <span class="tag" style="background: #fef3c7; color: #92400e;">Warm</span>
+        </div>
+    </div>
+
+    <!-- Invitation Option C -->
+    <div class="card">
+        <h3>Option C: Navy & Champagne</h3>
+        <p>Nuansa navy blue dengan aksen champagne/emas. Mewah, formal, dan sophisticated.</p>
+        <div class="palette">
+            <div class="swatch-group">
+                <div class="swatch" style="background: #1e3a5f;"></div>
+                <span class="swatch-label">Primary<br>#1E3A5F</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #4a7c9b;"></div>
+                <span class="swatch-label">Secondary<br>#4A7C9B</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #d4af37;"></div>
+                <span class="swatch-label">Accent/Gold<br>#D4AF37</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #f9f7f4;"></div>
+                <span class="swatch-label">Background<br>#F9F7F4</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #1a1a2e;"></div>
+                <span class="swatch-label">Text<br>#1A1A2E</span>
+            </div>
+        </div>
+        <div class="preview-bar" style="background: linear-gradient(90deg, #1e3a5f, #4a7c9b, #d4af37);"></div>
+        <div style="margin-top: 12px;">
+            <span class="tag" style="background: #dbeafe; color: #1e40af;">Luxury</span>
+            <span class="tag" style="background: #fef3c7; color: #92400e;">Formal</span>
+        </div>
+    </div>
+
+    <!-- Invitation Option D -->
+    <div class="card">
+        <h3>Option D: Minimalist Monochrome</h3>
+        <p>Hitam-putih dengan aksen tipis. Minimalis, modern, dan clean.</p>
+        <div class="palette">
+            <div class="swatch-group">
+                <div class="swatch" style="background: #1a1a1a;"></div>
+                <span class="swatch-label">Primary<br>#1A1A1A</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #6b7280;"></div>
+                <span class="swatch-label">Secondary<br>#6B7280</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #b8860b;"></div>
+                <span class="swatch-label">Accent<br>#B8860B</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #ffffff;"></div>
+                <span class="swatch-label">Background<br>#FFFFFF</span>
+            </div>
+            <div class="swatch-group">
+                <div class="swatch" style="background: #111827;"></div>
+                <span class="swatch-label">Text<br>#111827</span>
+            </div>
+        </div>
+        <div class="preview-bar" style="background: linear-gradient(90deg, #1a1a1a, #6b7280, #b8860b);"></div>
+        <div style="margin-top: 12px;">
+            <span class="tag" style="background: #f3f4f6; color: #374151;">Minimalist</span>
+            <span class="tag" style="background: #f3f4f6; color: #374151;">Modern</span>
+        </div>
+    </div>
+</div>
+
+<hr class="divider">
+
+<!-- ==================== FONT PAIRING ==================== -->
+<h2 class="section-title">🔤 Font Pairing Options (Invitation)</h2>
+
+<div class="grid">
+    <div class="card">
+        <h3>Option 1: Playfair Display + Poppins</h3>
+        <p style="font-family: serif; font-size: 1.3rem; margin-bottom: 4px;">The Wedding of Gina & Panji</p>
+        <p style="font-family: sans-serif; font-size: 0.9rem; color: #666;">Kami mengundang Anda untuk hadir di hari bahagia kami</p>
+        <div style="margin-top: 8px;"><span class="tag" style="background: #ede9fe; color: #7c3aed;">Classic + Modern</span></div>
+    </div>
+    <div class="card">
+        <h3>Option 2: Cormorant Garamond + Montserrat</h3>
+        <p style="font-family: 'Times New Roman', serif; font-size: 1.3rem; font-style: italic; margin-bottom: 4px;">The Wedding of Gina & Panji</p>
+        <p style="font-family: Arial, sans-serif; font-size: 0.9rem; color: #666; letter-spacing: 0.5px;">Kami mengundang Anda untuk hadir di hari bahagia kami</p>
+        <div style="margin-top: 8px;"><span class="tag" style="background: #fce7f3; color: #9d174d;">Elegant + Clean</span></div>
+    </div>
+    <div class="card">
+        <h3>Option 3: Great Vibes + Lato</h3>
+        <p style="font-family: cursive; font-size: 1.3rem; margin-bottom: 4px;">The Wedding of Gina & Panji</p>
+        <p style="font-family: sans-serif; font-size: 0.9rem; color: #666;">Kami mengundang Anda untuk hadir di hari bahagia kami</p>
+        <div style="margin-top: 8px;"><span class="tag" style="background: #fef3c7; color: #92400e;">Script + Readable</span></div>
+    </div>
+</div>
+
+<div class="note">
+    <strong>💡 Catatan:</strong> Pilihan tema ini akan menjadi <em>default template</em> untuk platform SaaS. Setiap client nantinya tetap bisa mengkustomisasi warna melalui CMS Dashboard. Silakan pilih kombinasi yang Anda inginkan untuk Dashboard dan Invitation, atau sampaikan preferensi warna custom Anda.
+</div>
+
+</body>
+</html>

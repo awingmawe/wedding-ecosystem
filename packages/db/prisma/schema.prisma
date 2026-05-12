@@ -1,0 +1,279 @@
+// Wedding Digital SaaS - Database Schema
+// Multi-tenant architecture with PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  admin
+  client
+  wo
+  scanner
+}
+
+enum GuestGroup {
+  family
+  friend
+  colleague
+  vip
+}
+
+enum GuestType {
+  invited
+  go_show
+}
+
+enum AttendanceType {
+  akad
+  resepsi
+  both
+  decline
+}
+
+enum CheckInMethod {
+  qr_scan
+  manual
+  go_show
+}
+
+enum SectionType {
+  cover
+  bride_groom
+  story
+  verse
+  countdown
+  akad_resepsi
+  rsvp
+  attire
+  gallery
+  video
+  gift
+  messages
+  closing
+  music
+}
+
+enum EventStatus {
+  draft
+  published
+  completed
+}
+
+enum ScannerLane {
+  lane_1
+  lane_2
+}
+
+enum PlanType {
+  basic
+  premium
+  enterprise
+}
+
+enum DeliveryStatus {
+  not_sent
+  sent
+  failed
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+/// Multi-tenant entity representing a business client
+model Tenant {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  slug       String   @unique
+  plan_type  PlanType @default(basic)
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+
+  users  User[]
+  events Event[]
+
+  @@map("tenants")
+}
+
+/// Platform user with role-based access
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenant_id     String   @db.Uuid
+  email         String
+  password_hash String
+  role          UserRole
+  name          String
+  created_at    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, email])
+  @@index([tenant_id])
+  @@map("users")
+}
+
+/// Wedding event owned by a tenant
+model Event {
+  id             String      @id @default(uuid()) @db.Uuid
+  tenant_id      String      @db.Uuid
+  slug           String      @unique
+  bride_name     String
+  groom_name     String
+  event_date     DateTime
+  venue_name     String
+  venue_address  String
+  venue_maps_url String
+  akad_start     String
+  akad_end       String
+  resepsi_start  String
+  resepsi_end    String
+  status         EventStatus @default(draft)
+  created_at     DateTime    @default(now())
+
+  tenant             Tenant              @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  event_config       EventConfig?
+  guests             Guest[]
+  invitation_sections InvitationSection[]
+  scanner_devices    ScannerDevice[]
+  messages           Message[]
+
+  @@index([tenant_id])
+  @@index([slug])
+  @@map("events")
+}
+
+/// Event configuration including theme and section settings
+model EventConfig {
+  id                   String   @id @default(uuid()) @db.Uuid
+  event_id             String   @unique @db.Uuid
+  theme_config         Json
+  active_sections      Json
+  invitation_music_url String?
+  calendar_link        String?
+  max_scanner_devices  Int      @default(2)
+  max_guests           Int      @default(2000)
+  updated_at           DateTime @updatedAt
+
+  event Event @relation(fields: [event_id], references: [id], onDelete: Cascade)
+
+  @@map("event_configs")
+}
+
+/// Guest record within an event (directly tenant-scoped for performance)
+model Guest {
+  id              String         @id @default(uuid()) @db.Uuid
+  event_id        String         @db.Uuid
+  tenant_id       String         @db.Uuid
+  name            String
+  slug            String
+  phone           String?
+  email           String?
+  group           GuestGroup
+  type            GuestType      @default(invited)
+  plus_one_count  Int            @default(0)
+  invitation_url  String?
+  delivery_status DeliveryStatus @default(not_sent)
+  created_at      DateTime       @default(now())
+
+  event     Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  qr_codes  QRCode[]
+  rsvps     RSVP[]
+  check_ins CheckIn[]
+
+  @@unique([event_id, slug])
+  @@index([tenant_id])
+  @@index([slug])
+  @@map("guests")
+}
+
+/// QR code associated with a guest
+model QRCode {
+  id           String   @id @default(uuid()) @db.Uuid
+  guest_id     String   @db.Uuid
+  qr_payload   String   @unique
+  qr_image_url String?
+  is_active    Boolean  @default(true)
+  generated_at DateTime @default(now())
+
+  guest Guest @relation(fields: [guest_id], references: [id], onDelete: Cascade)
+
+  @@index([qr_payload])
+  @@map("qr_codes")
+}
+
+/// RSVP submission from a guest
+model RSVP {
+  id           String         @id @default(uuid()) @db.Uuid
+  guest_id     String         @db.Uuid
+  attendance   AttendanceType
+  guest_count  Int
+  submitted_at DateTime       @default(now())
+
+  guest Guest @relation(fields: [guest_id], references: [id], onDelete: Cascade)
+
+  @@map("rsvps")
+}
+
+/// Check-in record for a guest at the venue
+model CheckIn {
+  id                String        @id @default(uuid()) @db.Uuid
+  guest_id          String        @db.Uuid
+  scanner_device_id String?       @db.Uuid
+  method            CheckInMethod
+  checked_in_at     DateTime      @default(now())
+
+  guest          Guest          @relation(fields: [guest_id], references: [id], onDelete: Cascade)
+  scanner_device ScannerDevice? @relation(fields: [scanner_device_id], references: [id], onDelete: SetNull)
+
+  @@map("check_ins")
+}
+
+/// CMS section for an invitation
+model InvitationSection {
+  id           String      @id @default(uuid()) @db.Uuid
+  event_id     String      @db.Uuid
+  section_type SectionType
+  sort_order   Int
+  is_active    Boolean     @default(true)
+  content      Json        @default("{}")
+  updated_at   DateTime    @updatedAt
+
+  event Event @relation(fields: [event_id], references: [id], onDelete: Cascade)
+
+  @@unique([event_id, sort_order])
+  @@map("invitation_sections")
+}
+
+/// Scanner device registered for an event
+model ScannerDevice {
+  id             String      @id @default(uuid()) @db.Uuid
+  event_id       String      @db.Uuid
+  device_name    String
+  lane           ScannerLane
+  is_active      Boolean     @default(true)
+  last_active_at DateTime    @default(now())
+
+  event     Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
+  check_ins CheckIn[]
+
+  @@map("scanner_devices")
+}
+
+/// Guest message/wish for the couple
+model Message {
+  id           String   @id @default(uuid()) @db.Uuid
+  event_id     String   @db.Uuid
+  sender_name  String
+  message_text String
+  created_at   DateTime @default(now())
+  is_visible   Boolean  @default(true)
+
+  event Event @relation(fields: [event_id], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}

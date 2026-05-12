@@ -1,0 +1,36 @@
+{
+  "name": "@wedding/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint . --ext .ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@wedding/shared": "*",
+    "@wedding/db": "*",
+    "fastify": "5.8.5",
+    "socket.io": "4.8.3",
+    "jsonwebtoken": "9.0.3",
+    "bcrypt": "6.0.0",
+    "sharp": "0.34.5",
+    "multer": "1.4.5-lts.2",
+    "ioredis": "5.10.1",
+    "zod": "3.25.3"
+  },
+  "devDependencies": {
+    "tsx": "4.20.3",
+    "typescript": "5.9.3",
+    "@types/node": "22.15.0",
+    "@types/bcrypt": "5.0.2",
+    "@types/jsonwebtoken": "9.0.9",
+    "@types/multer": "1.4.12",
+    "vitest": "3.2.4",
+    "fast-check": "4.8.0"
+  }
+}

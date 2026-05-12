@@ -1,0 +1,22 @@
+{
+  "name": "Wedding Scanner",
+  "short_name": "Scanner",
+  "description": "QR Code Scanner untuk verifikasi kehadiran tamu",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2d3436",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

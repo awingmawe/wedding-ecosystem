@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-text: #2d3436;
+  --color-success: #27ae60;
+  --color-danger: #e74c3c;
+  --color-warning: #f39c12;
+  --font-body: 'Poppins', sans-serif;
+}
+
+body {
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
