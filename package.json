@@ -12,6 +12,7 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "test": "turbo test",
+    "postinstall": "prisma generate --schema=packages/db/prisma/schema.prisma",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "scan-secrets": "bash scripts/detect-secrets.sh",
