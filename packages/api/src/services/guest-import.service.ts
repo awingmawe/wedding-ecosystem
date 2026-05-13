@@ -282,6 +282,7 @@ export async function bulkImportGuests(
     const result = await guestService.addGuest(eventId, tenantId, {
       name: validationResult.name,
       group: validationResult.group,
+      type: GuestType.INVITED,
       phone: validationResult.phone,
       email: validationResult.email,
       plus_one_count: validationResult.plus_one_count,
