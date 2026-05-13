@@ -77,20 +77,20 @@ Untuk mempercepat build di Vercel:
 
 ## Hasil Setelah Deploy
 
-Setelah deploy berhasil, Anda akan mendapat domain:
+Domain production:
 
-| App        | Domain (contoh)                 |
-| ---------- | ------------------------------- |
-| Dashboard  | `wedding-dashboard.vercel.app`  |
-| Invitation | `wedding-invitation.vercel.app` |
-| Scanner    | `wedding-scanner.vercel.app`    |
+| App        | Domain                                    |
+| ---------- | ----------------------------------------- |
+| Dashboard  | `wedding-ecosystem-dashboard.vercel.app`  |
+| Invitation | `wedding-ecosystem-invitation.vercel.app` |
+| Scanner    | `wedding-ecosystem-scanner.vercel.app`    |
 
 ## Step 5: Update Backend CORS (Setelah Backend Live)
 
 Setelah backend di-deploy ke Railway, set environment variable di Railway:
 
 ```
-CORS_ADDITIONAL_ORIGINS=https://wedding-dashboard.vercel.app,https://wedding-invitation.vercel.app,https://wedding-scanner.vercel.app
+CORS_ADDITIONAL_ORIGINS=https://wedding-ecosystem-dashboard.vercel.app,https://wedding-ecosystem-invitation.vercel.app,https://wedding-ecosystem-scanner.vercel.app
 ```
 
 Ini memungkinkan frontend apps berkomunikasi dengan backend tanpa custom domain.
