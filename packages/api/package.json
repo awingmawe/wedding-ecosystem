@@ -12,25 +12,30 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@wedding/shared": "*",
+    "@aws-sdk/client-s3": "3.777.0",
+    "@aws-sdk/s3-request-presigner": "3.777.0",
     "@wedding/db": "*",
-    "fastify": "5.8.5",
-    "socket.io": "4.8.3",
-    "jsonwebtoken": "9.0.3",
+    "@wedding/realtime": "*",
+    "@wedding/shared": "*",
     "bcrypt": "6.0.0",
-    "sharp": "0.34.5",
-    "multer": "1.4.5-lts.2",
+    "fastify": "5.8.5",
+    "fastify-plugin": "5.0.1",
     "ioredis": "5.10.1",
+    "jsonwebtoken": "9.0.3",
+    "multer": "1.4.5-lts.2",
+    "sharp": "0.34.5",
+    "socket.io": "4.8.3",
     "zod": "3.25.3"
   },
   "devDependencies": {
-    "tsx": "4.20.3",
-    "typescript": "5.9.3",
-    "@types/node": "22.15.0",
     "@types/bcrypt": "5.0.2",
     "@types/jsonwebtoken": "9.0.9",
     "@types/multer": "1.4.12",
-    "vitest": "3.2.4",
-    "fast-check": "4.8.0"
+    "@types/node": "22.15.0",
+    "fast-check": "4.8.0",
+    "pino-pretty": "^13.1.3",
+    "tsx": "4.20.3",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
   }
 }

@@ -2,7 +2,7 @@
   "name": "@wedding/shared",
   "version": "0.1.0",
   "private": true,
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
   "types": "./src/index.ts",
   "scripts": {
     "build": "tsc",
@@ -10,11 +10,13 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "sanitize-html": "2.16.0",
     "zod": "3.25.3"
   },
   "devDependencies": {
+    "@types/sanitize-html": "2.13.0",
+    "fast-check": "4.8.0",
     "typescript": "5.9.3",
-    "vitest": "3.2.4",
-    "fast-check": "4.8.0"
+    "vitest": "3.2.4"
   }
 }
