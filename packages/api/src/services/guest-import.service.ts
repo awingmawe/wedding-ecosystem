@@ -1,4 +1,4 @@
-import { GuestGroup } from '@wedding/shared';
+import { GuestGroup, GuestType } from '@wedding/shared';
 import { MAX_CSV_ROWS } from '@wedding/shared';
 import { GuestService, GuestRepository, isGuestError } from './guest.service';
 
