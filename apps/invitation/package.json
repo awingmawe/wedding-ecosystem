@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "test": "vitest run"
   },
   "dependencies": {
@@ -24,12 +26,18 @@
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.0",
     "@types/node": "22.15.0",
-    "@types/react": "19.1.0",
-    "@types/react-dom": "19.1.0",
+    "@types/react": "19.1.8",
+    "@types/react-dom": "19.1.6",
     "fast-check": "4.8.0",
     "postcss": "8.5.3",
+    "prettier": "^3.8.3",
+    "prettier-plugin-tailwindcss": "^0.8.0",
     "tailwindcss": "4.3.0",
     "typescript": "5.9.3",
     "vitest": "3.2.4"
+  },
+  "overrides": {
+    "@types/react": "19.1.8",
+    "@types/react-dom": "19.1.6"
   }
 }
