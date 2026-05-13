@@ -1,0 +1,18 @@
+# Railway Service Configuration - API Server (includes WebSocket)
+# Wedding Digital SaaS - Fastify 5 Backend API + Socket.io
+#
+# Single service handles both REST API and WebSocket connections.
+# The realtime package is a library attached to the same HTTP server.
+
+[build]
+builder = "nixpacks"
+buildCommand = "npm ci && npx turbo build --filter=@wedding/api"
+watchPatterns = ["packages/api/**", "packages/shared/**", "packages/db/**", "packages/realtime/**"]
+
+[deploy]
+startCommand = "node packages/api/dist/index.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+numReplicas = 1
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
