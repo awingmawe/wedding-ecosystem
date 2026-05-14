@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Pre-commit hook: Secret detection
+# Blocks commits that contain potential secrets (API keys, passwords, tokens, private keys)
+# Requirement: 3.6 - No secrets committed to Git repository
+
+# Run secret detection script
+bash "$(dirname "$0")/../scripts/detect-secrets.sh"

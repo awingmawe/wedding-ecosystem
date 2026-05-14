@@ -1,0 +1,84 @@
+# Railway Project Configuration
+# Wedding Digital SaaS - Backend Services
+#
+# This configuration defines the Railway deployment settings for backend services.
+# All backend services communicate over Railway's private network.
+# Only the load balancer exposes port 443 to the public internet.
+#
+# Services:
+#   - api: Fastify 5 API server (packages/api)
+#   - websocket: Socket.io 4.8 real-time server (packages/realtime)
+#   - postgresql: Managed PostgreSQL database
+#   - redis-cache: Redis for caching (session, rate limits, response cache)
+#   - redis-pubsub: Redis for Socket.io pub/sub adapter
+
+[build]
+builder = "nixpacks"
+buildCommand = "npm run build --filter=@wedding-digital/api"
+
+[deploy]
+startCommand = "node packages/api/dist/cluster.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NETWORKING CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Railway Private Networking:
+# - All services communicate via internal DNS (*.railway.internal)
+# - Backend services are NOT directly accessible from the public internet
+# - Only exposed through Railway's built-in load balancer on port 443
+#
+# Internal service addresses (private network):
+#   - api.railway.internal:3000
+#   - websocket.railway.internal:3001
+#   - postgresql.railway.internal:5432
+#   - redis-cache.railway.internal:6379
+#   - redis-pubsub.railway.internal:6379
+
+[deploy.networking]
+# Enable Railway private networking for service-to-service communication
+privateNetwork = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SERVICE EXPOSURE RULES
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Only the API and WebSocket services are exposed via the public load balancer.
+# Database and Redis services have NO public exposure.
+
+[[services]]
+name = "api"
+# Public exposure: only through Railway load balancer on port 443 (HTTPS)
+# Internal port 3000 is mapped to external port 443 via Railway's proxy
+internalPort = 3000
+protocol = "TCP"
+
+[[services]]
+name = "websocket"
+# Public exposure: only through Railway load balancer on port 443 (WSS)
+# Internal port 3001 is mapped to external port 443 via Railway's proxy
+internalPort = 3001
+protocol = "TCP"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ENVIRONMENT VARIABLES (references - actual values in Railway dashboard)
+# ─────────────────────────────────────────────────────────────────────────────
+
+[variables]
+# Database connection (private network)
+DATABASE_URL = "postgresql://${{PGUSER}}:${{PGPASSWORD}}@postgresql.railway.internal:5432/${{PGDATABASE}}?sslmode=verify-full"
+
+# Redis Cache connection (private network)
+REDIS_CACHE_URL = "rediss://:${{REDIS_CACHE_PASSWORD}}@redis-cache.railway.internal:6379"
+
+# Redis Pub/Sub connection (private network)
+REDIS_PUBSUB_URL = "rediss://:${{REDIS_PUBSUB_PASSWORD}}@redis-pubsub.railway.internal:6379"
+
+# Application settings
+NODE_ENV = "production"
+PORT = "3000"
+WS_PORT = "3001"

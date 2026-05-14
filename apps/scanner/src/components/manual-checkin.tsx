@@ -25,7 +25,7 @@ interface ManualCheckInProps {
 }
 
 export function ManualCheckIn({ eventId }: ManualCheckInProps) {
-  const { isOnline, apiBaseUrl } = usePWA();
+  const { isOnline, apiBaseUrl, authToken } = usePWA();
 
   // Search state
   const [query, setQuery] = useState('');
@@ -81,14 +81,16 @@ export function ManualCheckIn({ eventId }: ManualCheckInProps) {
             {
               headers: {
                 'Content-Type': 'application/json',
+                Authorization: `Bearer ${authToken}`,
               },
             }
           );
 
           if (response.ok) {
             const data = await response.json();
-            const guests: CachedGuest[] = (data.guests || []).slice(0, 10).map(
-              (g: Record<string, unknown>) => ({
+            const guests: CachedGuest[] = (data.guests || [])
+              .slice(0, 10)
+              .map((g: Record<string, unknown>) => ({
                 id: g.id as string,
                 name: g.name as string,
                 qrPayload: (g.qrPayload as string) || '',
@@ -96,8 +98,7 @@ export function ManualCheckIn({ eventId }: ManualCheckInProps) {
                 checkedIn: g.checkedIn as boolean,
                 checkedInAt: g.checkedInAt as string | undefined,
                 eventId: g.eventId as string,
-              })
-            );
+              }));
             setResults(guests);
           } else {
             // Fallback to local search on API error
@@ -122,7 +123,7 @@ export function ManualCheckIn({ eventId }: ManualCheckInProps) {
         setHasSearched(true);
       }
     },
-    [isOnline, apiBaseUrl, eventId]
+    [isOnline, apiBaseUrl, authToken, eventId]
   );
 
   /**
@@ -162,6 +163,7 @@ export function ManualCheckIn({ eventId }: ManualCheckInProps) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
           },
           body: JSON.stringify({
             guestId: guest.id,
@@ -181,9 +183,7 @@ export function ManualCheckIn({ eventId }: ManualCheckInProps) {
           showSuccess(guest.name);
         } else {
           const errorData = await response.json().catch(() => null);
-          setCheckInError(
-            errorData?.message || 'Gagal melakukan check-in. Silakan coba lagi.'
-          );
+          setCheckInError(errorData?.message || 'Gagal melakukan check-in. Silakan coba lagi.');
         }
       } else {
         // Offline: queue the check-in locally
@@ -198,9 +198,7 @@ export function ManualCheckIn({ eventId }: ManualCheckInProps) {
         // Update local results to reflect check-in
         setResults((prev) =>
           prev.map((g) =>
-            g.id === guest.id
-              ? { ...g, checkedIn: true, checkedInAt: new Date().toISOString() }
-              : g
+            g.id === guest.id ? { ...g, checkedIn: true, checkedInAt: new Date().toISOString() } : g
           )
         );
         showSuccess(guest.name);
@@ -227,6 +225,7 @@ export function ManualCheckIn({ eventId }: ManualCheckInProps) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
           },
           body: JSON.stringify({
             nama,
@@ -238,9 +237,7 @@ export function ManualCheckIn({ eventId }: ManualCheckInProps) {
           showSuccess(nama);
         } else {
           const errorData = await response.json().catch(() => null);
-          setGoShowError(
-            errorData?.message || 'Gagal mendaftarkan tamu. Silakan coba lagi.'
-          );
+          setGoShowError(errorData?.message || 'Gagal mendaftarkan tamu. Silakan coba lagi.');
         }
       } else {
         // Offline: queue the Go-Show locally
@@ -306,9 +303,7 @@ export function ManualCheckIn({ eventId }: ManualCheckInProps) {
     <div className="flex flex-col p-4">
       {/* Header */}
       <h2 className="text-lg font-semibold text-gray-900">Check-in Manual</h2>
-      <p className="mt-1 text-sm text-gray-500">
-        Cari nama tamu untuk check-in manual
-      </p>
+      <p className="mt-1 text-sm text-gray-500">Cari nama tamu untuk check-in manual</p>
 
       {/* Search bar */}
       <div className="relative mt-4">
@@ -396,9 +391,7 @@ function GuestResultItem({ guest, isCheckingIn, onCheckIn }: GuestResultItemProp
     >
       <div className="min-w-0 flex-1">
         <p className="truncate text-base font-medium text-gray-900">{guest.name}</p>
-        {groupLabel && (
-          <p className="mt-0.5 text-sm text-gray-500">{groupLabel}</p>
-        )}
+        {groupLabel && <p className="mt-0.5 text-sm text-gray-500">{groupLabel}</p>}
       </div>
 
       <div className="ml-3 flex-shrink-0">
@@ -497,14 +490,7 @@ function LoadingSpinner() {
       viewBox="0 0 24 24"
       aria-hidden="true"
     >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path
         className="opacity-75"
         fill="currentColor"

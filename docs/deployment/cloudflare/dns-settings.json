@@ -1,0 +1,57 @@
+{
+  "_comment": "Cloudflare DNS Configuration - Wedding Digital SaaS Platform",
+  "_requirements": ["11.1", "11.2", "11.7"],
+  "_description": "DNS records for all production subdomains with DNSSEC enabled",
+  "dns_records": [
+    {
+      "name": "dashboard",
+      "type": "CNAME",
+      "content": "${VERCEL_CNAME_TARGET}",
+      "ttl": 300,
+      "proxied": true,
+      "comment": "Dashboard App (Next.js) hosted on Vercel"
+    },
+    {
+      "name": "scanner",
+      "type": "CNAME",
+      "content": "${VERCEL_CNAME_TARGET}",
+      "ttl": 300,
+      "proxied": true,
+      "comment": "Scanner PWA (Next.js) hosted on Vercel"
+    },
+    {
+      "name": "*",
+      "type": "CNAME",
+      "content": "${VERCEL_CNAME_TARGET}",
+      "ttl": 300,
+      "proxied": true,
+      "comment": "Invitation App wildcard - handles {event-slug}.{domain} dynamic routing"
+    },
+    {
+      "name": "api",
+      "type": "CNAME",
+      "content": "${RAILWAY_API_TARGET}",
+      "ttl": 300,
+      "proxied": true,
+      "comment": "Fastify API server hosted on Railway"
+    },
+    {
+      "name": "ws",
+      "type": "CNAME",
+      "content": "${RAILWAY_WS_TARGET}",
+      "ttl": 300,
+      "proxied": true,
+      "comment": "WebSocket (Socket.io) server hosted on Railway"
+    }
+  ],
+  "dnssec": {
+    "enabled": true,
+    "status": "active",
+    "note": "DS record must be added at domain registrar after enabling"
+  },
+  "ttl_strategy": {
+    "go_live": 300,
+    "stable": 3600,
+    "note": "Start with 300s TTL for quick DNS changes during go-live. Increase to 3600s after 48h of stable operation."
+  }
+}

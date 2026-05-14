@@ -47,27 +47,27 @@ inclusion: always
 
 ## Pinned Dependency Versions
 
-| Package | Version |
-|---------|---------|
-| next | 16.2.0 |
-| react / react-dom | 19.2.0 |
-| tailwindcss | 4.1.7 |
-| typescript | 5.9.3 |
-| zod | 3.25.3 |
-| vitest | 3.2.4 |
-| fast-check | 4.2.0 |
-| fastify | 5.3.2 |
-| socket.io / socket.io-client | 4.8.3 |
-| prisma / @prisma/client | 7.7.0 |
-| motion | 12.17.0 |
-| sharp | 0.34.1 |
-| bcrypt | 6.0.0 |
-| jsonwebtoken | 9.0.2 |
-| react-hook-form | 7.62.0 |
-| @tanstack/react-query | 5.89.0 |
-| ioredis | 5.6.0 |
-| tsx | 4.20.3 |
-| turbo | ^2.4.0 |
+| Package                      | Version |
+| ---------------------------- | ------- |
+| next                         | 16.2.0  |
+| react / react-dom            | 19.2.0  |
+| tailwindcss                  | 4.1.7   |
+| typescript                   | 5.9.3   |
+| zod                          | 3.25.3  |
+| vitest                       | 3.2.4   |
+| fast-check                   | 4.2.0   |
+| fastify                      | 5.3.2   |
+| socket.io / socket.io-client | 4.8.3   |
+| prisma / @prisma/client      | 7.7.0   |
+| motion                       | 12.17.0 |
+| sharp                        | 0.34.1  |
+| bcrypt                       | 6.0.0   |
+| jsonwebtoken                 | 9.0.2   |
+| react-hook-form              | 7.62.0  |
+| @tanstack/react-query        | 5.89.0  |
+| ioredis                      | 5.6.0   |
+| tsx                          | 4.20.3  |
+| turbo                        | ^2.4.0  |
 
 ## Common Commands
 
@@ -83,11 +83,24 @@ npx prisma generate    # Generate Prisma client
 
 ## Performance Targets
 
-| Metric | Target |
-|--------|--------|
-| QR scan verification | < 2s |
-| Invitation FCP (mobile 3G) | < 3s |
-| WebSocket broadcast latency | < 500ms |
-| Duplicate detection | < 200ms |
-| DB lookup (QR/slug) | < 100ms |
-| Guest capacity per event | up to 2000 |
+| Metric                      | Target    |
+| --------------------------- | --------- |
+| QR scan verification        | < 2s      |
+| Invitation FCP (mobile 3G)  | < 3s      |
+| WebSocket broadcast latency | < 500ms   |
+| Duplicate detection         | < 200ms   |
+| DB lookup (QR/slug)         | < 100ms   |
+| Guest capacity per event    | up to 500 |
+
+## Scale & Infrastructure Decisions
+
+Current deployment targets **1 event, max 500 guests**. This informs the following decisions:
+
+| Decision                                          | Rationale                                                                                                                               |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Single Redis instance (cache + pub/sub shared)    | At ≤500 guests, pub/sub traffic is negligible (~few KB/s peak). No eviction risk.                                                       |
+| Single API server instance (no clustering needed) | 500 guests won't saturate a single Fastify process. Clustering is premature.                                                            |
+| No auto-scaling                                   | Fixed single instance is sufficient. Add scaling when multi-event support is needed.                                                    |
+| Single WebSocket instance                         | One event room with ≤50 concurrent connections doesn't need Redis adapter for horizontal scaling. Still configured for future-proofing. |
+
+**When to revisit**: Multiple concurrent events, 1000+ guests, or observed p95 latency exceeding targets.

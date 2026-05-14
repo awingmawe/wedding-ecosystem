@@ -1,0 +1,198 @@
+name: CI - Testing & Security Scanning
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  COVERAGE_THRESHOLD: 80
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Install dependencies and cache for downstream jobs
+  # ─────────────────────────────────────────────────────────────────────────────
+  install:
+    name: Install Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache node_modules
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Run unit and integration tests with coverage enforcement
+  # ─────────────────────────────────────────────────────────────────────────────
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore node_modules
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Run tests with coverage
+        run: npx turbo test -- --coverage --coverage.thresholds.statements=${{ env.COVERAGE_THRESHOLD }} --coverage.thresholds.branches=${{ env.COVERAGE_THRESHOLD }} --coverage.thresholds.functions=${{ env.COVERAGE_THRESHOLD }} --coverage.thresholds.lines=${{ env.COVERAGE_THRESHOLD }}
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            apps/*/coverage/
+            packages/*/coverage/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Dependency vulnerability scanning (npm audit)
+  # Blocks on critical/high severity vulnerabilities
+  # ─────────────────────────────────────────────────────────────────────────────
+  dependency-audit:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore node_modules
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Run npm audit (critical and high severity)
+        run: npm audit --audit-level=high
+        continue-on-error: false
+
+      - name: Generate audit report
+        if: failure()
+        run: |
+          echo "## Dependency Vulnerability Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Critical or high severity vulnerabilities found." >> $GITHUB_STEP_SUMMARY
+          echo "Run \`npm audit\` locally for details." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          npm audit --json > audit-report.json || true
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          cat audit-report.json | head -100 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Static code analysis (ESLint)
+  # ─────────────────────────────────────────────────────────────────────────────
+  static-analysis:
+    name: Static Code Analysis
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Restore node_modules
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Run ESLint
+        run: npx turbo lint
+
+      - name: Run TypeScript type checking
+        run: npx turbo build --filter='./packages/*'
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Security gate - blocks deployment if any security check fails
+  # ─────────────────────────────────────────────────────────────────────────────
+  security-gate:
+    name: Security Gate
+    runs-on: ubuntu-latest
+    needs: [test, dependency-audit, static-analysis]
+    if: always()
+    steps:
+      - name: Check job results
+        run: |
+          echo "## CI Security Gate Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "❌ Tests: FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "::error::Test suite failed. Deployment blocked."
+            FAILED=true
+          else
+            echo "✅ Tests: PASSED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.dependency-audit.result }}" != "success" ]; then
+            echo "❌ Dependency Audit: FAILED (critical/high vulnerabilities found)" >> $GITHUB_STEP_SUMMARY
+            echo "::error::Critical/high severity vulnerabilities detected. Deployment blocked."
+            FAILED=true
+          else
+            echo "✅ Dependency Audit: PASSED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.static-analysis.result }}" != "success" ]; then
+            echo "❌ Static Analysis: FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "::error::Static code analysis failed. Deployment blocked."
+            FAILED=true
+          else
+            echo "✅ Static Analysis: PASSED" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$FAILED" = "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🚫 **Deployment blocked** — resolve all issues above before merging." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **All checks passed** — safe to deploy." >> $GITHUB_STEP_SUMMARY

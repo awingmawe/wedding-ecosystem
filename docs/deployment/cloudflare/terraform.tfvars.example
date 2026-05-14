@@ -1,0 +1,75 @@
+# =============================================================================
+# Cloudflare WAF & DDoS Protection - Example Variables
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in actual values.
+# NEVER commit terraform.tfvars to version control.
+# =============================================================================
+
+# Cloudflare API Token (requires Zone:WAF:Edit, Zone:Firewall:Edit permissions)
+cloudflare_api_token = "your-cloudflare-api-token"
+
+# Cloudflare Zone ID (found in Cloudflare Dashboard > Overview)
+cloudflare_zone_id = "your-zone-id"
+
+# Cloudflare Account ID
+cloudflare_account_id = "your-account-id"
+
+# Production domain
+domain = "weddingdigital.id"
+
+# Notification email for WAF/DDoS alerts
+notification_email = "security@weddingdigital.id"
+
+# R2 credentials for WAF log storage
+r2_access_key_id     = "your-r2-access-key-id"
+r2_secret_access_key = "your-r2-secret-access-key"
+
+# =============================================================================
+# SSL/TLS Configuration (Task 1.3)
+# =============================================================================
+# These variables are also used by terraform/cloudflare-ssl-tls.tf
+# The cloudflare_api_token needs Zone:SSL and Certificates:Edit permissions
+# The cloudflare_zone_id and domain variables are shared with WAF config above
+
+# =============================================================================
+# R2 Storage Configuration (Task 8.3)
+# =============================================================================
+# These variables are used by terraform/cloudflare-r2-storage.tf
+# The cloudflare_api_token needs R2:Edit permissions
+# The cloudflare_account_id and domain variables are shared with configs above
+
+# R2 bucket name (default: wedding-digital-media-production)
+r2_bucket_name = "wedding-digital-media-production"
+
+# =============================================================================
+# Health Check & Failover Configuration (Task 14.2)
+# =============================================================================
+# These variables are used by terraform/cloudflare-health-checks.tf
+# The cloudflare_api_token needs Load Balancing: Monitors and Pools Write permissions
+# The cloudflare_account_id, cloudflare_zone_id, and domain variables are shared above
+
+# Primary API origin (Railway production endpoint)
+primary_origin = "wedding-api-primary.railway.app"
+
+# Secondary/failover API origin (Railway failover endpoint)
+secondary_origin = "wedding-api-secondary.railway.app"
+
+# Notification email for health check alerts
+notification_email = "ops@weddingdigital.id"
+
+# =============================================================================
+# DNS Configuration (Task 14.1)
+# =============================================================================
+# These variables are used by terraform/cloudflare-dns.tf
+# The cloudflare_api_token needs Zone:DNS:Edit and Zone:DNSSEC:Edit permissions
+# The cloudflare_zone_id and domain variables are shared with configs above
+
+# Vercel CNAME target for frontend apps
+vercel_cname_target = "cname.vercel-dns.com"
+
+# Railway service hostnames (replace with actual Railway public URLs)
+railway_api_target = "your-api-service.up.railway.app"
+railway_ws_target  = "your-ws-service.up.railway.app"
+
+# DNS TTL in seconds (300 for go-live, 3600 after stable)
+dns_ttl = 300

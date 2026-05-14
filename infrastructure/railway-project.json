@@ -1,0 +1,161 @@
+{
+  "project": {
+    "name": "wedding-digital-production",
+    "description": "Wedding Digital SaaS - Production Backend Services",
+    "settings": {
+      "privateNetworking": true
+    }
+  },
+  "services": {
+    "api": {
+      "source": {
+        "repo": ".",
+        "rootDirectory": "packages/api"
+      },
+      "networking": {
+        "internalPort": 3000,
+        "publicDomain": "api.${DOMAIN}",
+        "privateHost": "api.railway.internal",
+        "publicAccess": true
+      },
+      "deploy": {
+        "healthcheck": {
+          "path": "/health",
+          "interval": 10,
+          "timeout": 5,
+          "unhealthyThreshold": 3
+        },
+        "replicas": {
+          "min": 2,
+          "max": 10
+        },
+        "autoscaling": {
+          "cpuThreshold": 70,
+          "memoryThreshold": 80
+        }
+      },
+      "allowedConnections": [
+        {
+          "target": "postgresql",
+          "port": 5432,
+          "protocol": "TCP/TLS",
+          "purpose": "Database queries via Prisma ORM"
+        },
+        {
+          "target": "redis-cache",
+          "port": 6379,
+          "protocol": "TCP/TLS",
+          "purpose": "Caching, rate limiting, session storage"
+        },
+        {
+          "target": "redis-pubsub",
+          "port": 6379,
+          "protocol": "TCP/TLS",
+          "purpose": "Event broadcasting to WebSocket clients"
+        }
+      ]
+    },
+    "websocket": {
+      "source": {
+        "repo": ".",
+        "rootDirectory": "packages/realtime"
+      },
+      "networking": {
+        "internalPort": 3001,
+        "publicDomain": "ws.${DOMAIN}",
+        "privateHost": "websocket.railway.internal",
+        "publicAccess": true,
+        "stickySession": true
+      },
+      "deploy": {
+        "healthcheck": {
+          "path": "/health",
+          "interval": 10,
+          "timeout": 5,
+          "unhealthyThreshold": 3
+        },
+        "replicas": {
+          "min": 2,
+          "max": 10
+        },
+        "autoscaling": {
+          "cpuThreshold": 70,
+          "memoryThreshold": 80
+        },
+        "gracefulShutdown": {
+          "timeout": 30,
+          "drainConnections": true
+        }
+      },
+      "allowedConnections": [
+        {
+          "target": "redis-pubsub",
+          "port": 6379,
+          "protocol": "TCP/TLS",
+          "purpose": "Socket.io Redis adapter for horizontal scaling"
+        },
+        {
+          "target": "redis-cache",
+          "port": 6379,
+          "protocol": "TCP/TLS",
+          "purpose": "JWT session validation"
+        }
+      ]
+    },
+    "postgresql": {
+      "plugin": "postgresql",
+      "networking": {
+        "internalPort": 5432,
+        "privateHost": "postgresql.railway.internal",
+        "publicAccess": false
+      },
+      "allowedInbound": [
+        {
+          "source": "api",
+          "port": 5432,
+          "protocol": "TCP/TLS"
+        }
+      ]
+    },
+    "redis-cache": {
+      "plugin": "redis",
+      "networking": {
+        "internalPort": 6379,
+        "privateHost": "redis-cache.railway.internal",
+        "publicAccess": false
+      },
+      "allowedInbound": [
+        {
+          "source": "api",
+          "port": 6379,
+          "protocol": "TCP/TLS"
+        },
+        {
+          "source": "websocket",
+          "port": 6379,
+          "protocol": "TCP/TLS"
+        }
+      ]
+    },
+    "redis-pubsub": {
+      "plugin": "redis",
+      "networking": {
+        "internalPort": 6379,
+        "privateHost": "redis-pubsub.railway.internal",
+        "publicAccess": false
+      },
+      "allowedInbound": [
+        {
+          "source": "api",
+          "port": 6379,
+          "protocol": "TCP/TLS"
+        },
+        {
+          "source": "websocket",
+          "port": 6379,
+          "protocol": "TCP/TLS"
+        }
+      ]
+    }
+  }
+}

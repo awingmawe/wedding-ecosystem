@@ -1,8 +1,13 @@
 import Fastify from 'fastify';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { createRealtimeServer, type RealtimeServer } from '@wedding/realtime';
+import { createProductionPrismaClient } from '@wedding/db';
+import {
+  createRealtimeServer,
+  createAuthMiddleware,
+  registerRoomAuthorization,
+  type RealtimeServer,
+  type EventAuthRepository,
+} from '@wedding/realtime';
 import { authRoutes } from './routes/auth';
 import { guestRoutes } from './routes/guests';
 import { eventRoutes } from './routes/events';
@@ -13,31 +18,59 @@ import { rsvpRoutes } from './routes/rsvp';
 import { cmsRoutes } from './routes/cms';
 import { scannerRoutes } from './routes/scanner';
 import { messageRoutes } from './routes/messages';
+import { healthRoutes } from './routes/health';
 import {
   createCORSMiddleware,
   createDefaultCORSConfig,
   createRateLimiterMiddleware,
+  RedisRateLimiterStore,
   InMemoryRateLimiterStore,
 } from './middleware';
+import { securityHeaders } from './plugins/security-headers';
+import { auditLogger } from './plugins/audit-logger';
+import {
+  responseCache,
+  DEFAULT_CACHE_ROUTES,
+  DEFAULT_INVALIDATION_RULES,
+} from './plugins/response-cache';
+import { getFastifyLoggerConfig, createRequestLogger } from './config/logger';
+import { getFastifyProductionOptions, getProductionConfig } from './config/production';
+import { getCacheClient, disconnectRedis } from './config/redis';
 
 // --- Config ---
 const JWT_SECRET = process.env.JWT_SECRET || 'wedding-dev-secret-key';
 const REFRESH_SECRET = process.env.REFRESH_SECRET || 'wedding-dev-refresh-secret-key';
-const PORT = parseInt(process.env.PORT || '4000', 10);
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/wedding_digital_saas?schema=public';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+// Production config (body limits, timeouts, trust proxy)
+const productionConfig = getProductionConfig();
+const PORT = productionConfig.server.port;
 
 // CORS origins (configurable via env)
 const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || 'http://localhost:3000';
 const INVITATION_ORIGIN = process.env.INVITATION_ORIGIN || 'http://localhost:3001';
 const SCANNER_ORIGIN = process.env.SCANNER_ORIGIN || 'http://localhost:3002';
 
-// --- Prisma Client ---
-const adapter = new PrismaPg({ connectionString: DATABASE_URL });
-const prisma = new PrismaClient({ adapter });
+// --- Prisma Client (production-ready with pool, SSL, timeouts) ---
+const prisma = createProductionPrismaClient();
 
-// --- Fastify Server ---
+// --- Fastify Server (with production options) ---
 const app = Fastify({
-  logger: true,
+  logger: getFastifyLoggerConfig(),
+  ...getFastifyProductionOptions(productionConfig),
+});
+
+// --- Security Headers Plugin (Req 12.1, 12.2) ---
+app.register(securityHeaders);
+
+// --- Audit Logger Plugin (Req 12.10) ---
+app.register(auditLogger);
+
+// --- Response Cache Plugin (Req 14.3) ---
+// Gracefully degrades when Redis is unavailable
+app.register(responseCache, {
+  cacheRoutes: DEFAULT_CACHE_ROUTES,
+  invalidationRules: DEFAULT_INVALIDATION_RULES,
 });
 
 // --- CORS Middleware (Req 13.7) ---
@@ -52,9 +85,31 @@ const corsConfig = createDefaultCORSConfig({
 const corsMiddleware = createCORSMiddleware(corsConfig);
 app.addHook('onRequest', corsMiddleware);
 
+// --- Structured Logging Context (Req 9.2) ---
+// Enrich request logger with request_id and tenant_id for structured tracing
+app.addHook('onRequest', async (request) => {
+  const requestId = request.requestId || request.headers['x-request-id'];
+  if (requestId) {
+    request.log = createRequestLogger(request.log, { request_id: requestId as string });
+  }
+});
+
+// After authentication, enrich logger with tenant_id
+app.addHook('preHandler', async (request) => {
+  if (request.user?.tenant_id) {
+    request.log = createRequestLogger(request.log, {
+      request_id: request.requestId,
+      tenant_id: request.user.tenant_id,
+    });
+  }
+});
+
 // --- Rate Limiting Middleware (Req 13.3, 13.4) ---
-// 100 requests per minute per tenant, returns 429 on exceed
-const rateLimiterStore = new InMemoryRateLimiterStore();
+// Use Redis store in production for persistence across restarts, in-memory for dev
+const redisClient = getCacheClient();
+const rateLimiterStore = redisClient
+  ? new RedisRateLimiterStore(redisClient as any)
+  : new InMemoryRateLimiterStore();
 const rateLimiterMiddleware = createRateLimiterMiddleware(rateLimiterStore);
 
 // Apply rate limiting to all routes except health check
@@ -131,7 +186,12 @@ let realtime: RealtimeServer | null = null;
 // --- Register Routes ---
 
 // Auth routes (public - login/refresh don't need auth)
-app.register(authRoutes, { prefix: '/auth', prisma, jwtSecret: JWT_SECRET, refreshSecret: REFRESH_SECRET });
+app.register(authRoutes, {
+  prefix: '/auth',
+  prisma,
+  jwtSecret: JWT_SECRET,
+  refreshSecret: REFRESH_SECRET,
+});
 
 // Protected routes (require auth + tenant isolation)
 app.register(guestRoutes, { prefix: '/guests', prisma });
@@ -153,12 +213,22 @@ app.register(async (instance) => {
 app.register(invitationRoutes, { prefix: '/invitations', prisma });
 app.register(messageRoutes, { prefix: '/messages', prisma });
 
-// --- Health check ---
-app.get('/health', async () => ({
-  status: 'ok',
-  version: '0.1.0',
-  timestamp: new Date().toISOString(),
-}));
+// --- Health check (Req 9.8, 9.9) ---
+app.register(healthRoutes, {
+  prisma,
+  getRealtimeServer: () => realtime,
+});
+
+// --- Event Auth Repository for WebSocket authorization ---
+const eventAuthRepository: EventAuthRepository = {
+  async isEventOwnedByTenant(eventId: string, tenantId: string): Promise<boolean> {
+    const event = await prisma.event.findFirst({
+      where: { id: eventId, tenant_id: tenantId },
+      select: { id: true },
+    });
+    return event !== null;
+  },
+};
 
 // --- Start server ---
 async function start() {
@@ -166,8 +236,17 @@ async function start() {
     await prisma.$connect();
     console.log('✅ Database connected');
 
+    // Connect Redis (lazy connect)
+    const redis = getCacheClient();
+    if (redis) {
+      await redis.connect().catch((err: Error) => {
+        console.warn('⚠️  Redis connection failed (graceful degradation):', err.message);
+      });
+    }
+
     await app.listen({ port: PORT, host: '0.0.0.0' });
     console.log(`🚀 API server running on http://localhost:${PORT}`);
+    console.log(`   Environment: ${IS_PRODUCTION ? 'production' : 'development'}`);
 
     // Attach Socket.io WebSocket server to the same HTTP server (Req 9.1, 9.2, 9.3)
     const httpServer = app.server as any;
@@ -178,14 +257,75 @@ async function start() {
         credentials: true,
       },
     });
-    console.log('🔌 WebSocket server attached');
-    console.log(`   Allowed origins: ${DASHBOARD_ORIGIN}, ${INVITATION_ORIGIN}, ${SCANNER_ORIGIN}`);
 
+    // --- WebSocket Authentication Middleware (Req 13.6) ---
+    // Validates JWT token on handshake — rejects unauthenticated connections
+    const authMiddleware = createAuthMiddleware({
+      jwtSecret: JWT_SECRET,
+      eventAuthRepository,
+    });
+    realtime.io.use(authMiddleware);
+
+    // --- WebSocket Room Authorization (Req 13.7) ---
+    // Enforces tenant-scoped room access on join_event
+    realtime.io.on('connection', (socket) => {
+      registerRoomAuthorization(socket, eventAuthRepository);
+    });
+
+    console.log('🔌 WebSocket server attached (with auth middleware)');
+    console.log(`   Allowed origins: ${DASHBOARD_ORIGIN}, ${INVITATION_ORIGIN}, ${SCANNER_ORIGIN}`);
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);
   }
 }
+
+// --- Graceful Shutdown (Req 13.5) ---
+async function shutdown(signal: string) {
+  console.log(`\n[Shutdown] Received ${signal}. Starting graceful shutdown...`);
+
+  const shutdownTimeout = productionConfig.process.gracefulShutdownTimeout;
+  const timer = setTimeout(() => {
+    console.error('[Shutdown] Timeout reached, forcing exit.');
+    process.exit(1);
+  }, shutdownTimeout);
+
+  try {
+    // 1. Stop accepting new HTTP connections
+    await app.close();
+    console.log('[Shutdown] HTTP server closed.');
+
+    // 2. Close WebSocket connections gracefully
+    if (realtime) {
+      realtime.io.emit('server_shutting_down', {
+        reason: 'Server is shutting down for maintenance or deployment',
+      });
+      // Give clients 2 seconds to receive the message
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await realtime.close();
+      console.log('[Shutdown] WebSocket server closed.');
+    }
+
+    // 3. Disconnect Redis
+    await disconnectRedis();
+    console.log('[Shutdown] Redis disconnected.');
+
+    // 4. Disconnect database
+    await prisma.$disconnect();
+    console.log('[Shutdown] Database disconnected.');
+
+    clearTimeout(timer);
+    console.log('[Shutdown] Graceful shutdown complete.');
+    process.exit(0);
+  } catch (err) {
+    console.error('[Shutdown] Error during shutdown:', err);
+    clearTimeout(timer);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 start();
 

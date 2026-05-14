@@ -1,0 +1,67 @@
+{
+  "description": "Cloudflare R2 Object Storage configuration for Wedding Digital SaaS production media",
+  "requirements": ["8.1", "8.2", "8.3", "8.5", "8.7"],
+  "bucket": {
+    "name": "wedding-digital-media-production",
+    "location": "APAC",
+    "encryption": {
+      "type": "SSE",
+      "key_management": "cloudflare-managed",
+      "description": "Server-side encryption with Cloudflare-managed keys (always-on for R2)"
+    },
+    "versioning": {
+      "enabled": true,
+      "purpose": "Accidental deletion recovery"
+    },
+    "public_access": {
+      "blocked": true,
+      "access_method": "CDN-only via custom domain (Origin Access)"
+    }
+  },
+  "cors": {
+    "upload_rule": {
+      "allowed_origins": ["https://dashboard.{domain}"],
+      "allowed_methods": ["PUT", "POST"],
+      "allowed_headers": [
+        "Content-Type",
+        "Content-Length",
+        "Content-MD5",
+        "x-amz-content-sha256",
+        "x-amz-date",
+        "Authorization"
+      ],
+      "expose_headers": ["ETag", "x-amz-request-id"],
+      "max_age_seconds": 3600
+    },
+    "download_rule": {
+      "allowed_origins": ["https://cdn.{domain}", "https://*.{domain}"],
+      "allowed_methods": ["GET", "HEAD"],
+      "allowed_headers": ["Content-Type", "Range"],
+      "expose_headers": ["Content-Length", "Content-Type", "ETag", "Accept-Ranges"],
+      "max_age_seconds": 86400
+    }
+  },
+  "lifecycle": {
+    "infrequent_access_transition": {
+      "days": 90,
+      "description": "Move files not accessed for 90 days to Infrequent Access storage class"
+    },
+    "abort_incomplete_multipart_upload": {
+      "days": 7,
+      "description": "Clean up incomplete multipart uploads after 7 days"
+    }
+  },
+  "access_control": {
+    "cdn_custom_domain": "cdn.{domain}",
+    "signed_url_expiry_minutes": 15,
+    "quota_per_tenant_gb": 5
+  },
+  "cdn_integration": {
+    "custom_domain": "cdn.{domain}",
+    "cloudflare_proxy": true,
+    "cache_control": {
+      "images": "public, max-age=31536000, immutable",
+      "videos": "public, max-age=86400"
+    }
+  }
+}

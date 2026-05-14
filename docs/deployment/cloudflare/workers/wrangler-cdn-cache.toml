@@ -1,0 +1,33 @@
+# Wrangler configuration for CDN Cache Control Worker
+# This worker enforces cache-control headers at the Cloudflare edge
+#
+# Requirements: 7.2, 7.4, 7.7
+#
+# Deploy:
+#   cd docs/deployment/cloudflare/workers
+#   npx wrangler deploy --config wrangler-cdn-cache.toml
+
+name = "wedding-cdn-cache"
+main = "cdn-cache-worker.ts"
+compatibility_date = "2024-01-01"
+
+# Route configuration — applies to all production subdomains
+# Replace {domain} with actual production domain
+# NOTE: This worker is OPTIONAL if zone-level cache rules (Terraform/API) are applied.
+# Use this worker for additional edge-level cache header enforcement.
+
+# Uncomment and configure routes for production:
+# [[routes]]
+# pattern = "dashboard.example.com/*"
+# zone_name = "example.com"
+#
+# [[routes]]
+# pattern = "*.example.com/*"
+# zone_name = "example.com"
+#
+# [[routes]]
+# pattern = "scanner.example.com/*"
+# zone_name = "example.com"
+
+[vars]
+ENVIRONMENT = "production"

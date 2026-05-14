@@ -1,0 +1,453 @@
+name: Post-Deployment Smoke Test
+
+on:
+  workflow_call:
+    inputs:
+      changed_paths:
+        description: 'Comma-separated list of changed paths for selective cache purge'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      API_URL:
+        required: true
+      WS_URL:
+        required: true
+      CDN_URL:
+        required: true
+      CLOUDFLARE_ZONE_ID:
+        required: true
+      CLOUDFLARE_API_TOKEN:
+        required: true
+
+  workflow_dispatch:
+    inputs:
+      changed_paths:
+        description: 'Comma-separated list of changed paths for selective cache purge (e.g., /assets/css/main.css,/assets/js/app.js)'
+        required: false
+        type: string
+        default: ''
+
+env:
+  NODE_VERSION: '20'
+  SMOKE_TEST_TIMEOUT: 30
+  RETRY_COUNT: 3
+  RETRY_DELAY: 5
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # API Health Check: Verify all backend dependencies are healthy
+  # ─────────────────────────────────────────────────────────────────────────────
+  health-check:
+    name: API Health Check
+    runs-on: ubuntu-latest
+    outputs:
+      api_status: ${{ steps.check.outputs.status }}
+      postgresql_status: ${{ steps.check.outputs.postgresql }}
+      redis_status: ${{ steps.check.outputs.redis }}
+      websocket_status: ${{ steps.check.outputs.websocket }}
+    steps:
+      - name: Verify API health endpoint
+        id: check
+        env:
+          API_URL: ${{ inputs.changed_paths != '' && secrets.API_URL || vars.API_URL || secrets.API_URL }}
+        run: |
+          API_ENDPOINT="${{ secrets.API_URL || vars.API_URL }}"
+
+          if [ -z "$API_ENDPOINT" ]; then
+            echo "❌ API_URL not configured"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          HEALTH_URL="${API_ENDPOINT}/health"
+          echo "Checking health endpoint: $HEALTH_URL"
+
+          # Retry logic for health check
+          for attempt in $(seq 1 ${{ env.RETRY_COUNT }}); do
+            echo "Attempt $attempt/${{ env.RETRY_COUNT }}..."
+
+            RESPONSE=$(curl -s --max-time ${{ env.SMOKE_TEST_TIMEOUT }} "$HEALTH_URL" 2>/dev/null || echo "")
+
+            if [ -z "$RESPONSE" ]; then
+              echo "⚠️  No response from health endpoint (attempt $attempt)"
+              if [ $attempt -lt ${{ env.RETRY_COUNT }} ]; then
+                sleep ${{ env.RETRY_DELAY }}
+                continue
+              fi
+              echo "status=failed" >> $GITHUB_OUTPUT
+              echo "postgresql=unknown" >> $GITHUB_OUTPUT
+              echo "redis=unknown" >> $GITHUB_OUTPUT
+              echo "websocket=unknown" >> $GITHUB_OUTPUT
+              echo "❌ Health endpoint unreachable after ${{ env.RETRY_COUNT }} attempts" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            fi
+
+            # Parse health response
+            OVERALL_STATUS=$(echo "$RESPONSE" | jq -r '.status' 2>/dev/null || echo "unknown")
+            PG_STATUS=$(echo "$RESPONSE" | jq -r '.dependencies.postgresql.status' 2>/dev/null || echo "unknown")
+            REDIS_STATUS=$(echo "$RESPONSE" | jq -r '.dependencies.redis_cache.status' 2>/dev/null || echo "unknown")
+            WS_STATUS=$(echo "$RESPONSE" | jq -r '.dependencies.websocket.status' 2>/dev/null || echo "unknown")
+
+            PG_LATENCY=$(echo "$RESPONSE" | jq -r '.dependencies.postgresql.latency' 2>/dev/null || echo "N/A")
+            REDIS_LATENCY=$(echo "$RESPONSE" | jq -r '.dependencies.redis_cache.latency' 2>/dev/null || echo "N/A")
+            WS_LATENCY=$(echo "$RESPONSE" | jq -r '.dependencies.websocket.latency' 2>/dev/null || echo "N/A")
+
+            echo "status=$OVERALL_STATUS" >> $GITHUB_OUTPUT
+            echo "postgresql=$PG_STATUS" >> $GITHUB_OUTPUT
+            echo "redis=$REDIS_STATUS" >> $GITHUB_OUTPUT
+            echo "websocket=$WS_STATUS" >> $GITHUB_OUTPUT
+
+            # Report results
+            echo "## 🏥 API Health Check" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Dependency | Status | Latency |" >> $GITHUB_STEP_SUMMARY
+            echo "|------------|--------|---------|" >> $GITHUB_STEP_SUMMARY
+            echo "| PostgreSQL | $PG_STATUS | ${PG_LATENCY}ms |" >> $GITHUB_STEP_SUMMARY
+            echo "| Redis Cache | $REDIS_STATUS | ${REDIS_LATENCY}ms |" >> $GITHUB_STEP_SUMMARY
+            echo "| WebSocket | $WS_STATUS | ${WS_LATENCY}ms |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Overall Status**: $OVERALL_STATUS" >> $GITHUB_STEP_SUMMARY
+
+            # Fail if unhealthy
+            if [ "$OVERALL_STATUS" = "unhealthy" ]; then
+              echo "❌ API health check returned unhealthy"
+              exit 1
+            fi
+
+            # Pass if healthy or degraded (degraded = Redis down but non-critical)
+            if [ "$OVERALL_STATUS" = "healthy" ] || [ "$OVERALL_STATUS" = "degraded" ]; then
+              if [ "$OVERALL_STATUS" = "degraded" ]; then
+                echo "⚠️  API is degraded (non-critical dependency down)"
+              else
+                echo "✅ API is healthy"
+              fi
+              exit 0
+            fi
+
+            # Unknown status — retry
+            if [ $attempt -lt ${{ env.RETRY_COUNT }} ]; then
+              sleep ${{ env.RETRY_DELAY }}
+            fi
+          done
+
+          echo "❌ Health check failed after ${{ env.RETRY_COUNT }} attempts"
+          exit 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # CDN Smoke Test: Verify static assets are accessible via CDN
+  # ─────────────────────────────────────────────────────────────────────────────
+  cdn-check:
+    name: CDN Asset Accessibility
+    runs-on: ubuntu-latest
+    outputs:
+      cdn_status: ${{ steps.check.outputs.status }}
+    steps:
+      - name: Verify CDN assets
+        id: check
+        run: |
+          CDN_ENDPOINT="${{ secrets.CDN_URL || vars.CDN_URL }}"
+
+          if [ -z "$CDN_ENDPOINT" ]; then
+            echo "⚠️  CDN_URL not configured, skipping CDN check"
+            echo "status=skipped" >> $GITHUB_OUTPUT
+            echo "## 🌐 CDN Check: Skipped (CDN_URL not configured)" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          echo "## 🌐 CDN Asset Accessibility" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          FAILED=0
+          TOTAL=0
+
+          # Test key static asset paths
+          ASSET_PATHS=(
+            "/robots.txt"
+            "/favicon.ico"
+          )
+
+          echo "| Asset Path | Status | Cache Header |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------|--------|--------------|" >> $GITHUB_STEP_SUMMARY
+
+          for path in "${ASSET_PATHS[@]}"; do
+            TOTAL=$((TOTAL + 1))
+            FULL_URL="${CDN_ENDPOINT}${path}"
+
+            # Get HTTP status and cache header
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time ${{ env.SMOKE_TEST_TIMEOUT }} "$FULL_URL" 2>/dev/null || echo "000")
+            CACHE_HEADER=$(curl -s -I --max-time ${{ env.SMOKE_TEST_TIMEOUT }} "$FULL_URL" 2>/dev/null | grep -i "cf-cache-status" | tr -d '\r' || echo "N/A")
+
+            if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "304" ]; then
+              echo "| $path | ✅ $HTTP_STATUS | $CACHE_HEADER |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| $path | ❌ $HTTP_STATUS | $CACHE_HEADER |" >> $GITHUB_STEP_SUMMARY
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          # Also verify CDN endpoint itself responds
+          CDN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time ${{ env.SMOKE_TEST_TIMEOUT }} "$CDN_ENDPOINT" 2>/dev/null || echo "000")
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "CDN root response: HTTP $CDN_STATUS" >> $GITHUB_STEP_SUMMARY
+
+          if [ $FAILED -gt 0 ]; then
+            echo "status=degraded" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️  $FAILED/$TOTAL assets returned non-200 status" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "status=healthy" >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "✅ All CDN assets accessible" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # WebSocket Connectivity: Verify WebSocket handshake succeeds
+  # ─────────────────────────────────────────────────────────────────────────────
+  websocket-check:
+    name: WebSocket Connectivity
+    runs-on: ubuntu-latest
+    outputs:
+      ws_status: ${{ steps.check.outputs.status }}
+    steps:
+      - name: Install wscat
+        run: npm install -g wscat
+
+      - name: Verify WebSocket connectivity
+        id: check
+        run: |
+          WS_ENDPOINT="${{ secrets.WS_URL || vars.WS_URL }}"
+
+          if [ -z "$WS_ENDPOINT" ]; then
+            echo "⚠️  WS_URL not configured, skipping WebSocket check"
+            echo "status=skipped" >> $GITHUB_OUTPUT
+            echo "## 🔌 WebSocket Check: Skipped (WS_URL not configured)" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          echo "## 🔌 WebSocket Connectivity" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Socket.io uses HTTP transport for initial handshake
+          # Test the Socket.io polling transport endpoint
+          SOCKETIO_URL="${WS_ENDPOINT}/socket.io/?EIO=4&transport=polling"
+          echo "Testing Socket.io handshake: $SOCKETIO_URL"
+
+          for attempt in $(seq 1 ${{ env.RETRY_COUNT }}); do
+            HTTP_STATUS=$(curl -s -o /tmp/ws_response.txt -w "%{http_code}" --max-time ${{ env.SMOKE_TEST_TIMEOUT }} "$SOCKETIO_URL" 2>/dev/null || echo "000")
+            RESPONSE_BODY=$(cat /tmp/ws_response.txt 2>/dev/null || echo "")
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              # Socket.io returns a session ID in the response body
+              if echo "$RESPONSE_BODY" | grep -q "sid"; then
+                echo "status=healthy" >> $GITHUB_OUTPUT
+                echo "✅ WebSocket handshake successful (HTTP $HTTP_STATUS)" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "Socket.io session established via polling transport" >> $GITHUB_STEP_SUMMARY
+                exit 0
+              else
+                echo "⚠️  HTTP 200 but no session ID in response (attempt $attempt)"
+              fi
+            else
+              echo "⚠️  WebSocket endpoint returned HTTP $HTTP_STATUS (attempt $attempt)"
+            fi
+
+            if [ $attempt -lt ${{ env.RETRY_COUNT }} ]; then
+              sleep ${{ env.RETRY_DELAY }}
+            fi
+          done
+
+          # Fallback: try WebSocket upgrade directly
+          echo "Trying direct WebSocket upgrade..."
+          WS_UPGRADE_URL=$(echo "$WS_ENDPOINT" | sed 's|^http|ws|')"/socket.io/?EIO=4&transport=websocket"
+
+          timeout 10 wscat -c "$WS_UPGRADE_URL" --no-check -x "" 2>/tmp/ws_error.txt &
+          WS_PID=$!
+          sleep 3
+
+          if kill -0 $WS_PID 2>/dev/null; then
+            # Process is still running = connection established
+            kill $WS_PID 2>/dev/null || true
+            echo "status=healthy" >> $GITHUB_OUTPUT
+            echo "✅ WebSocket upgrade successful" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          # Check if wscat exited with connection error
+          WS_ERROR=$(cat /tmp/ws_error.txt 2>/dev/null || echo "")
+          echo "status=failed" >> $GITHUB_OUTPUT
+          echo "❌ WebSocket connectivity check failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Error: $WS_ERROR" >> $GITHUB_STEP_SUMMARY
+          exit 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Cache Purge: Selective Cloudflare cache purge on changed paths
+  # ─────────────────────────────────────────────────────────────────────────────
+  cache-purge:
+    name: Cloudflare Cache Purge
+    runs-on: ubuntu-latest
+    needs: [health-check, cdn-check, websocket-check]
+    if: always() && needs.health-check.result == 'success'
+    outputs:
+      purge_status: ${{ steps.purge.outputs.status }}
+    steps:
+      - name: Purge changed paths from Cloudflare cache
+        id: purge
+        run: |
+          ZONE_ID="${{ secrets.CLOUDFLARE_ZONE_ID }}"
+          CF_TOKEN="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          CDN_ENDPOINT="${{ secrets.CDN_URL || vars.CDN_URL }}"
+          CHANGED_PATHS="${{ inputs.changed_paths }}"
+
+          if [ -z "$ZONE_ID" ] || [ -z "$CF_TOKEN" ]; then
+            echo "⚠️  Cloudflare credentials not configured, skipping cache purge"
+            echo "status=skipped" >> $GITHUB_OUTPUT
+            echo "## 🗑️ Cache Purge: Skipped (credentials not configured)" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          echo "## 🗑️ Cloudflare Cache Purge" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # If no specific paths provided, purge common deployment artifacts
+          if [ -z "$CHANGED_PATHS" ]; then
+            CHANGED_PATHS="/_next/static/,/assets/,/manifest.json,/sw.js"
+            echo "No specific paths provided, using default deployment paths" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "Paths to purge: $CHANGED_PATHS" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Build the files array for Cloudflare API
+          # Convert comma-separated paths to full URLs
+          FILES_JSON="["
+          FIRST=true
+          IFS=',' read -ra PATHS <<< "$CHANGED_PATHS"
+          for path in "${PATHS[@]}"; do
+            path=$(echo "$path" | xargs) # trim whitespace
+            if [ -n "$path" ]; then
+              if [ "$FIRST" = true ]; then
+                FIRST=false
+              else
+                FILES_JSON+=","
+              fi
+
+              # If path starts with http, use as-is; otherwise prepend CDN URL
+              if echo "$path" | grep -q "^http"; then
+                FILES_JSON+="\"$path\""
+              else
+                FILES_JSON+="\"${CDN_ENDPOINT}${path}\""
+              fi
+            fi
+          done
+          FILES_JSON+="]"
+
+          echo "Purging files: $FILES_JSON"
+
+          # Call Cloudflare API to purge specific files (not full purge)
+          PURGE_RESPONSE=$(curl -s -X POST \
+            "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CF_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "{\"files\": ${FILES_JSON}}" \
+            --max-time 30)
+
+          PURGE_SUCCESS=$(echo "$PURGE_RESPONSE" | jq -r '.success' 2>/dev/null || echo "false")
+
+          if [ "$PURGE_SUCCESS" = "true" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "✅ Cache purge successful" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Purged paths:" >> $GITHUB_STEP_SUMMARY
+            for path in "${PATHS[@]}"; do
+              path=$(echo "$path" | xargs)
+              if [ -n "$path" ]; then
+                echo "- \`$path\`" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          else
+            ERRORS=$(echo "$PURGE_RESPONSE" | jq -r '.errors[]?.message' 2>/dev/null || echo "Unknown error")
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "❌ Cache purge failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Error: $ERRORS" >> $GITHUB_STEP_SUMMARY
+            # Don't fail the workflow for cache purge issues
+            echo "::warning::Cache purge failed: $ERRORS"
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Results: Aggregate and report final smoke test results
+  # ─────────────────────────────────────────────────────────────────────────────
+  results:
+    name: Smoke Test Results
+    runs-on: ubuntu-latest
+    needs: [health-check, cdn-check, websocket-check, cache-purge]
+    if: always()
+    steps:
+      - name: Evaluate results
+        run: |
+          echo "## 📊 Smoke Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          FAILED=0
+
+          # API Health Check
+          API_RESULT="${{ needs.health-check.result }}"
+          API_STATUS="${{ needs.health-check.outputs.api_status }}"
+          if [ "$API_RESULT" = "success" ]; then
+            echo "| API Health | ✅ $API_STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| API Health | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            FAILED=$((FAILED + 1))
+          fi
+
+          # CDN Check
+          CDN_RESULT="${{ needs.cdn-check.result }}"
+          CDN_STATUS="${{ needs.cdn-check.outputs.cdn_status }}"
+          if [ "$CDN_RESULT" = "success" ]; then
+            echo "| CDN Assets | ✅ $CDN_STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| CDN Assets | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            FAILED=$((FAILED + 1))
+          fi
+
+          # WebSocket Check
+          WS_RESULT="${{ needs.websocket-check.result }}"
+          WS_STATUS="${{ needs.websocket-check.outputs.ws_status }}"
+          if [ "$WS_RESULT" = "success" ]; then
+            echo "| WebSocket | ✅ $WS_STATUS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| WebSocket | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            FAILED=$((FAILED + 1))
+          fi
+
+          # Cache Purge (non-blocking)
+          PURGE_RESULT="${{ needs.cache-purge.result }}"
+          PURGE_STATUS="${{ needs.cache-purge.outputs.purge_status }}"
+          if [ "$PURGE_RESULT" = "success" ]; then
+            echo "| Cache Purge | ✅ $PURGE_STATUS |" >> $GITHUB_STEP_SUMMARY
+          elif [ "$PURGE_STATUS" = "skipped" ]; then
+            echo "| Cache Purge | ⏭️ Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Cache Purge | ⚠️ $PURGE_STATUS |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Triggered by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+
+          # Fail the workflow if critical checks failed
+          if [ $FAILED -gt 0 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **$FAILED critical check(s) failed**" >> $GITHUB_STEP_SUMMARY
+            echo "::error::Smoke test failed: $FAILED critical check(s) did not pass"
+            exit 1
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **All smoke tests passed**" >> $GITHUB_STEP_SUMMARY

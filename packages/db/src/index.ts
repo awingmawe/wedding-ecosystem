@@ -2,7 +2,12 @@
 // Re-exports Prisma client for use across the monorepo
 
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
+import {
+  createProductionPrismaClient,
+  calculatePoolSize,
+  getPoolOptions,
+  type PrismaPoolOptions,
+} from './client';
 
 export const DB_VERSION = '0.1.0';
 
@@ -12,38 +17,22 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 /**
- * Creates a PrismaClient instance using the pg driver adapter.
- * Requires DATABASE_URL environment variable to be set.
- */
-function createPrismaClient(): PrismaClient {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error(
-      'DATABASE_URL environment variable is required. Set it in packages/db/.env or your environment.',
-    );
-  }
-
-  const adapter = new PrismaPg({ connectionString });
-  return new PrismaClient({
-    adapter,
-    log:
-      process.env.NODE_ENV === 'development'
-        ? ['query', 'error', 'warn']
-        : ['error'],
-  });
-}
-
-/**
  * Singleton Prisma client instance.
+ * Uses production-ready configuration with:
+ * - Connection pooling (pool size: CPU cores × 2 + 1, min 10)
+ * - SSL verify-full in production
+ * - 30-second query timeout
+ *
  * In development, reuses the same instance across hot reloads.
  * In production, creates a new instance per process.
  */
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+export const prisma = globalForPrisma.prisma ?? createProductionPrismaClient();
 
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
-// Re-export Prisma types and client class
-export { PrismaClient };
+// Re-export Prisma types, client class, and configuration utilities
+export { PrismaClient, createProductionPrismaClient, calculatePoolSize, getPoolOptions };
+export type { PrismaPoolOptions };
 export * from '@prisma/client';

@@ -1,7 +1,7 @@
 /**
  * WebSocket Provider component.
  * Provides WebSocket connection state and real-time sync to the app.
- * Integrates with the existing PWA infrastructure.
+ * Integrates with the existing PWA infrastructure and auth context.
  * UI labels in Bahasa Indonesia.
  */
 
@@ -18,7 +18,8 @@ import {
 import { usePWA } from './pwa-provider';
 
 // Default WebSocket URL — uses NEXT_PUBLIC_WS_URL or falls back to API URL
-const DEFAULT_WS_URL = process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3100';
+const DEFAULT_WS_URL =
+  process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 interface WebSocketContextValue extends WebSocketState {
   /** Human-readable status label in Bahasa Indonesia */
@@ -70,10 +71,7 @@ export function WebSocketProvider({
   onGoShowAdded,
   onGuestAdded,
 }: WebSocketProviderProps) {
-  const { eventId, apiBaseUrl, isOnline } = usePWA();
-
-  // In production, authToken would come from auth context
-  const authToken = '';
+  const { eventId, apiBaseUrl, authToken, isOnline } = usePWA();
 
   // Memoize callbacks to prevent unnecessary re-renders
   const handleGuestCheckedIn = useCallback(
@@ -102,7 +100,7 @@ export function WebSocketProvider({
     eventId,
     apiBaseUrl,
     authToken,
-    enabled: isOnline && !!eventId,
+    enabled: isOnline && !!eventId && !!authToken,
     onGuestCheckedIn: handleGuestCheckedIn,
     onGoShowAdded: handleGoShowAdded,
     onGuestAdded: handleGuestAdded,
@@ -113,9 +111,5 @@ export function WebSocketProvider({
     statusLabel: getStatusLabel(wsState.status),
   };
 
-  return (
-    <WebSocketContext.Provider value={contextValue}>
-      {children}
-    </WebSocketContext.Provider>
-  );
+  return <WebSocketContext.Provider value={contextValue}>{children}</WebSocketContext.Provider>;
 }
