@@ -1,423 +1,98 @@
-# Agent Instructions — Wedding Ecosystem
+# AGENTS.md
 
-> This file provides context for AI coding agents (Claude Code, Gemini CLI, Cursor, Copilot, Windsurf, etc.) working on this project. Read this FIRST before making any changes.
+> Multi-tenant wedding invitation platform (Indonesian market). Monorepo: 3 Next.js 16 frontend apps + Fastify 5 backend + PostgreSQL + Redis + Socket.io real-time.
 
----
-
-## Project Identity
-
-**Wedding Ecosystem** — A multi-tenant SaaS platform for digital wedding invitation management, targeting the Indonesian market. Monorepo with 3 frontend apps + 1 backend API.
-
-**Status**: Production-deployed. All services live on Vercel (frontend) and Railway (backend).
-
----
-
-## Architecture Overview
+## Directory Map
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Frontend Apps (Vercel)                  │
-├───────────────────┬───────────────────┬─────────────────────┤
-│   Dashboard       │   Invitation      │   Scanner (PWA)     │
-│   Next.js 16      │   Next.js 16      │   Next.js 16        │
-│   Port: 3000      │   Port: 3001      │   Port: 3002        │
-└────────┬──────────┴────────┬──────────┴──────────┬──────────┘
-         │                   │                     │
-         └───────────────────┼─────────────────────┘
-                             │ REST API + WebSocket (Socket.io)
-┌────────────────────────────┴────────────────────────────────┐
-│              Backend: Fastify 5 + Socket.io 4.8 (Railway)    │
-│                        Port: 4000                            │
-├──────────────────────────────────────────────────────────────┤
-│  Auth │ Guests │ Events │ RSVP │ Check-in │ CMS │ Scanner   │
-└────────┬──────────────────────┬──────────────────────────────┘
-         │                      │
-    ┌────┴────┐           ┌─────┴─────┐
-    │PostgreSQL│           │   Redis    │
-    │(Supabase)│           │ (Upstash)  │
-    └──────────┘           └───────────┘
+apps/
+├── dashboard/        → Client/WO management UI (port 3000)
+│   └── src/app/      → App Router: login, guests, cms, theme, rsvp, notifications
+├── invitation/       → Guest-facing invitation (port 3001, mobile-first, SSR)
+│   └── src/app/[eventSlug]/ → Dynamic route, 14 CMS sections rendered
+└── scanner/          → QR check-in PWA (port 3002, offline-first)
+    └── src/lib/      → IndexedDB queue, sync-manager, service worker
+
+packages/
+├── api/              → Fastify REST + WebSocket server (port 4000)
+│   └── src/
+│       ├── routes/   → auth, guests, events, checkin, rsvp, cms, scanner, messages, notifications, invitations, health
+│       ├── services/ → Business logic (11 services)
+│       ├── middleware/ → CORS, rate-limit, RBAC, tenant-isolation, encryption, input-validation
+│       └── plugins/  → audit-logger, response-cache, security-headers
+├── db/               → Prisma 7 schema (12 models, 10 enums), migrations, client factory
+├── shared/           → Zod schemas, TypeScript interfaces, enums, error codes, sanitization
+└── realtime/         → Socket.io 4.8 server, room-based per event, JWT auth middleware
 ```
 
----
-
-## Monorepo Structure
-
-```
-/
-├── apps/
-│   ├── dashboard/          # Client & WO Dashboard (Next.js 16, responsive, desktop-first)
-│   ├── invitation/         # Guest-facing invitation (Next.js 16, mobile-first, no auth)
-│   └── scanner/            # Scanner PWA (Next.js 16, offline-first, camera access)
-├── packages/
-│   ├── api/                # Backend API (Fastify 5, single service handles REST + WebSocket)
-│   │   ├── src/config/     # Production config, database, Redis, logger
-│   │   ├── src/middleware/  # CORS, rate limiting, tenant isolation, RBAC, encryption
-│   │   ├── src/plugins/    # Audit logger, response cache, security headers, request validation
-│   │   ├── src/routes/     # Route handlers (auth, guests, events, checkin, rsvp, cms, scanner, messages, invitations, notifications, health)
-│   │   └── src/services/   # Business logic layer
-│   ├── db/                 # Prisma 7 schema, migrations, client factory
-│   ├── shared/             # Shared TypeScript types, Zod schemas, enums, error codes, utilities
-│   └── realtime/           # Socket.io server (room-based, auth middleware, graceful shutdown)
-├── .github/workflows/      # CI/CD (tests, deploy-backend, deploy-frontend, smoke-test, secret-scanning)
-├── scripts/                # Utility scripts (domain setup, CDN config, secret detection)
-├── .env.example            # Template for all environment variables
-├── .env.local              # Local development env (gitignored)
-├── package.json            # Root monorepo config (npm workspaces + Turborepo)
-└── turbo.json              # Turborepo task configuration
-```
-
----
-
-## Tech Stack (Pinned Versions)
-
-| Layer      | Technology                  | Version                                       |
-| ---------- | --------------------------- | --------------------------------------------- |
-| Frontend   | Next.js                     | 16.2                                          |
-| UI         | React                       | 19.2                                          |
-| Styling    | TailwindCSS                 | 4.3 (CSS-first config, no tailwind.config.ts) |
-| Components | shadcn/ui                   | latest (copy-paste pattern)                   |
-| Animation  | Motion (Framer Motion)      | 12.17+                                        |
-| Backend    | Fastify                     | 5.8                                           |
-| ORM        | Prisma                      | 7.7 (with @prisma/adapter-pg)                 |
-| WebSocket  | Socket.io                   | 4.8                                           |
-| Cache      | Redis via ioredis           | 5.10                                          |
-| Auth       | JWT (jsonwebtoken) + bcrypt | 9.0 / 6.0                                     |
-| Validation | Zod                         | 3.25                                          |
-| Testing    | Vitest + fast-check         | 3.2 / 4.8                                     |
-| Language   | TypeScript                  | 5.9                                           |
-| Monorepo   | npm workspaces + Turborepo  | 2.4                                           |
-| Node.js    | Minimum                     | 20.0.0                                        |
-
-**IMPORTANT**: All dependency versions are PINNED (no ^ or ~ ranges). Do NOT upgrade versions without explicit instruction.
-
----
-
-## Language & Locale Conventions
-
-| Context                                                  | Language                                 |
-| -------------------------------------------------------- | ---------------------------------------- |
-| Variable names, function names, comments, docs           | **English**                              |
-| UI labels, button text, error messages, user-facing copy | **Bahasa Indonesia**                     |
-| Date format                                              | `DD MMMM YYYY` (e.g., "12 Januari 2026") |
-| Currency                                                 | IDR (Rp), no decimal places              |
-| Time zone                                                | WIB (Asia/Jakarta, UTC+7)                |
-
----
-
-## User Roles & Permissions
-
-| Role             | Scope           | Can Do                                   | Cannot Do             |
-| ---------------- | --------------- | ---------------------------------------- | --------------------- |
-| Admin            | All tenants     | Full CRUD, tenant management             | —                     |
-| Client           | Own tenant      | Manage own events, guests, CMS, themes   | Access other tenants  |
-| WO               | Assigned events | Manage assigned events, guests, check-in | Create/delete events  |
-| Scanner Operator | Assigned event  | QR scan, manual check-in, Go-Show        | Guest management, CMS |
-
----
-
-## Core Domain Rules (MUST FOLLOW)
-
-1. **Tenant isolation** — EVERY database query MUST be scoped by `tenant_id`. Never expose data across tenants.
-2. **Personalized URLs** — Format: `/{event-slug}?to={guest-slug}`. The guest-slug determines the name on the cover.
-3. **QR uniqueness** — One QR code per guest per event. Payload contains `guest_id` + `event_id`.
-4. **Duplicate detection** — Prevent duplicate check-ins. Second scan returns YELLOW status with first check-in timestamp.
-5. **Go-Show flow** — Walk-in guests added on-site. Temporary record, no QR code, immediately checked in.
-6. **CMS sections** — 14 configurable sections per invitation. Each toggleable and reorderable.
-7. **RSVP states** — `pending` | `confirmed` | `declined` | `checked_in`.
-8. **Real-time broadcast** — Check-in and RSVP updates broadcast via WebSocket, scoped to event room.
-9. **Offline queue** — Scanner stores actions in IndexedDB when offline, syncs on reconnect. Conflict resolution: server timestamp wins.
-10. **Event capacity** — Max 500 guests per event.
-
----
-
-## API Endpoints Reference
-
-### Auth (No auth required)
-
-- `POST /auth/login` — Login, returns JWT access_token (15min) + refresh_token (7 days)
-- `POST /auth/refresh` — Refresh access token
-
-### Events (Auth required)
-
-- `GET /events` — List events for tenant
-
-### Guests (Auth required)
-
-- `GET /guests` — List guests (paginated, filterable by group)
-- `POST /guests` — Create guest (auto-generates QR)
-- `PUT /guests/:id` — Update guest
-- `GET /guests/search?q=&event_id=` — Search by name (min 3 chars)
-- `GET /guests/:id/qr` — Get QR code data
-- `POST /guests/import` — Bulk import from CSV
-
-### Check-in (Auth required)
-
-- `POST /checkin/scan` — QR scan verification (returns GREEN/YELLOW/RED)
-- `POST /checkin/manual` — Manual check-in by guest_id
-- `POST /checkin/go-show` — Register + check-in walk-in guest
-- `POST /checkin/sync` — Sync offline check-in records
-
-### RSVP (No auth — public)
-
-- `POST /rsvp` — Submit RSVP
-
-### CMS (Auth required)
-
-- `GET /cms/sections/:eventId` — Get all sections
-
-### Scanner (Auth required)
-
-- `POST /scanner/devices/register` — Register scanner device (max 2 per event)
-- `GET /scanner/devices/:eventId` — List active devices
-- `GET /scanner/guests/:eventId` — Get guest cache for offline use
-- `PUT /scanner/devices/:deviceId/heartbeat` — Update heartbeat
-- `DELETE /scanner/devices/:deviceId` — Deactivate device
-
-### Invitations (No auth — public)
-
-- `GET /invitations/:eventSlug` — Get invitation data
-
-### Messages (No auth — public)
-
-- `POST /messages` — Send wish/message
-- `GET /messages?event_id=` — Get messages for event
-
-### Notifications (Auth required)
-
-- `GET /notifications` — Get delivery status
-
-### Health (No auth)
-
-- `GET /health` — Returns status of PostgreSQL, Redis, WebSocket
-
----
-
-## WebSocket Events
-
-Server uses Socket.io with room-based architecture. Clients join `event:{eventId}` room.
-
-**Authentication**: JWT token passed via `auth: { token }` on handshake.
-
-**Events emitted by server**:
-
-- `guest_checked_in` — When a guest checks in
-- `rsvp_updated` — When RSVP is submitted
-- `go_show_added` — When Go-Show guest is registered
-- `stats_updated` — Updated event statistics
-
-**Events emitted by client**:
-
-- `join_event` — Join an event room
-- `leave_event` — Leave an event room
-
----
-
-## Database Schema (Key Tables)
-
-```
-tenants → users → events → guests → qr_codes
-                         → event_configs
-                         → invitation_sections
-                         → scanner_devices
-                         → messages
-                   guests → rsvps
-                         → check_ins
-```
-
-Every table with user data has `tenant_id` for isolation. See `packages/db/prisma/schema.prisma` for full schema.
-
----
-
-## Key Architectural Decisions
-
-| Decision                                       | Rationale                                                         |
-| ---------------------------------------------- | ----------------------------------------------------------------- |
-| Single API service (REST + WebSocket combined) | At ≤500 guests, no need for separate WS service                   |
-| Single Redis instance (cache + pub/sub)        | Traffic negligible at current scale                               |
-| No clustering                                  | Single Fastify process handles the load                           |
-| In-memory rate limiter fallback                | Redis-backed primary, graceful degrade without Redis              |
-| PrismaClient with pg adapter                   | Direct PostgreSQL connection with pool management                 |
-| JWT in localStorage (Scanner)                  | PWA needs persistence across reloads, acceptable for scanner-only |
-
----
-
-## Common Commands
-
-```bash
-npm install                    # Install all dependencies
-npm run dev                    # Run all apps + API via Turborepo
-npm run build                  # Build all packages
-npm run test                   # Run all tests
-npm run lint                   # Lint all packages
-
-# Per-package
-npx turbo dev --filter=@wedding/api          # API only
-npx turbo dev --filter=@wedding/dashboard    # Dashboard only
-npx turbo test --filter=@wedding/api         # API tests only
-npx turbo build --filter=@wedding/api...     # Build API + dependencies
-
-# Database
-npx prisma migrate dev --schema=packages/db/prisma/schema.prisma   # Create migration
-npx prisma migrate deploy                                           # Apply migrations (production)
-npx prisma generate --schema=packages/db/prisma/schema.prisma      # Generate client
-npx prisma studio --schema=packages/db/prisma/schema.prisma        # Visual DB browser
-```
-
----
-
-## Environment Variables
-
-### Backend (packages/api)
-
-```env
-NODE_ENV=development|production
-PORT=4000
-DATABASE_URL=postgresql://...
-DATABASE_POOLED_URL=postgresql://...:6543/...  # PgBouncer (production)
-UPSTASH_REDIS_CACHE_URL=redis://localhost:6379  # or rediss://... for TLS
-JWT_SECRET=<secret>
-REFRESH_SECRET=<secret>
-DASHBOARD_ORIGIN=http://localhost:3000
-INVITATION_ORIGIN=http://localhost:3001
-SCANNER_ORIGIN=http://localhost:3002
-R2_ACCOUNT_ID=<cloudflare-r2>
-R2_ACCESS_KEY_ID=<r2-key>
-R2_SECRET_ACCESS_KEY=<r2-secret>
-R2_BUCKET_NAME=wedding-ecosystem
-R2_PUBLIC_URL=https://cdn.domain.com
-```
-
-### Frontend (all apps)
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:4000
-NEXT_PUBLIC_WS_URL=http://localhost:4000
-NEXT_PUBLIC_CDN_URL=http://localhost:4000
-```
-
----
-
-## Testing Conventions
-
-- **Framework**: Vitest 3.2
-- **Property-based**: fast-check 4.8
-- **Test files**: Co-located with source (`*.test.ts`, `*.property.test.ts`)
-- **Coverage target**: 80% for business logic
-- **Run**: `npm run test` or `npx turbo test --filter=@wedding/api`
-- **DO NOT** add tests unless explicitly asked
-- **DO NOT** use `--watch` mode in commands (use `--run` for single execution)
-
----
-
-## Deployment
-
-| Service         | Platform      | Config File                   |
-| --------------- | ------------- | ----------------------------- |
-| Dashboard       | Vercel        | `apps/dashboard/vercel.json`  |
-| Invitation      | Vercel        | `apps/invitation/vercel.json` |
-| Scanner         | Vercel        | `apps/scanner/vercel.json`    |
-| API + WebSocket | Railway       | `packages/api/railway.toml`   |
-| Database        | Supabase      | Managed PostgreSQL            |
-| Cache           | Upstash       | Serverless Redis              |
-| CDN/Storage     | Cloudflare R2 | —                             |
-
-CI/CD via GitHub Actions:
-
-- `ci.yml` — Tests + security gate (blocks deploy on failure)
-- `deploy-backend.yml` — Blue-green deployment with auto-rollback
-- `deploy-frontend.yml` — Per-app Vercel deployment with smoke tests
-- `smoke-test.yml` — Post-deploy health/CDN/WebSocket verification
-- `secret-scanning.yml` — Detects committed secrets
-
----
-
-## Rules for AI Agents
-
-### MUST DO
-
-1. **Read relevant code before modifying** — Never guess file contents.
-2. **Maintain tenant isolation** — Every new query MUST include `tenant_id` filter.
-3. **Use Bahasa Indonesia for UI text** — All user-facing strings in Indonesian.
-4. **Use English for code** — Variables, functions, comments in English.
-5. **Pin dependency versions** — No `^` or `~` in app packages.
-6. **Update README.md** — After adding/changing features, update the relevant README section.
-7. **Follow existing patterns** — Look at similar files before creating new ones.
-8. **Use Zod for validation** — All input validation uses Zod schemas from `@wedding/shared`.
-9. **Scope WebSocket broadcasts to event rooms** — Never broadcast globally.
-10. **Handle offline gracefully** — Scanner features must work without network.
-
-### MUST NOT DO
-
-1. **DO NOT** upgrade dependency versions without explicit instruction.
-2. **DO NOT** add tests unless explicitly asked.
-3. **DO NOT** create staging environments or add complexity beyond current scale.
-4. **DO NOT** use `any` type — use proper TypeScript types.
-5. **DO NOT** expose secrets in code or logs.
-6. **DO NOT** break tenant isolation (cross-tenant data access).
-7. **DO NOT** use `tailwind.config.ts` — TailwindCSS 4 uses CSS-first configuration.
-8. **DO NOT** add new dependencies without checking if existing ones cover the use case.
-9. **DO NOT** modify `.env` or `.env.local` files (they contain secrets).
-10. **DO NOT** use interactive commands (`--watch`, editors) in terminal.
-
-### Code Style
-
-- **Formatting**: Prettier (auto-configured)
-- **Linting**: ESLint with TypeScript plugin
-- **Imports**: Use `@wedding/shared`, `@wedding/db`, `@wedding/realtime` for cross-package imports
-- **Path aliases**: Frontend apps use `@/` for `src/` directory
-- **Error responses**: `{ success: false, error: { code: string, message: string } }`
-- **Success responses**: `{ data: T, pagination?: { page, per_page, total, total_pages } }`
-- **Auth header**: `Authorization: Bearer <token>`
-
-### When Adding New Features
-
-1. Check `packages/shared/src/types/` for existing types/enums
-2. Add route in `packages/api/src/routes/`
-3. Add service logic in `packages/api/src/services/`
-4. Use `app.addHook('onRequest', authenticate)` for protected routes
-5. Always filter by `tenant_id` from `request.user.tenant_id`
-6. Broadcast real-time updates via `realtime.broadcastX()` if relevant
-7. Update `README.md` with the new feature
-
-### When Fixing Bugs
-
-1. Read the relevant route, service, and test files first
-2. Check if there's a property-based test that covers the case
-3. Fix the root cause, not symptoms
-4. Verify the fix doesn't break tenant isolation
-
----
-
-## Demo Credentials (Local Development)
-
-| Role    | Email              | Password      |
-| ------- | ------------------ | ------------- |
-| Client  | `admin@demo.com`   | `password123` |
-| Scanner | `scanner@demo.com` | `password123` |
-
-**Tenant**: Wedding Demo (`1a0db76b-1e72-4f7e-8015-6b05d2f3fc7c`)
-**Event**: Romeo & Juliet (`c3268c2d-fae0-4284-ad70-249ef6a62682`, slug: `romeo-juliet`)
-
----
-
-## File Reference Quick Links
-
-| What                     | Where                                            |
-| ------------------------ | ------------------------------------------------ |
-| Database schema          | `packages/db/prisma/schema.prisma`               |
-| API entry point          | `packages/api/src/index.ts`                      |
-| API routes               | `packages/api/src/routes/*.ts`                   |
-| Shared types             | `packages/shared/src/types/`                     |
-| Zod schemas              | `packages/shared/src/types/validation.ts`        |
-| Error codes              | `packages/shared/src/types/errors.ts`            |
-| WebSocket server         | `packages/realtime/src/index.ts`                 |
-| WS auth middleware       | `packages/realtime/src/middleware/auth.ts`       |
-| Scanner auth             | `apps/scanner/src/lib/auth.ts`                   |
-| Scanner offline queue    | `apps/scanner/src/lib/offline-queue.ts`          |
-| Dashboard socket hook    | `apps/dashboard/src/hooks/use-socket.ts`         |
-| Production config        | `packages/api/src/config/production.ts`          |
-| Redis config             | `packages/api/src/config/redis.ts`               |
-| CORS middleware          | `packages/api/src/middleware/cors.middleware.ts` |
-| CI/CD workflows          | `.github/workflows/`                             |
-| Deploy config (API)      | `packages/api/railway.toml`                      |
-| Deploy config (Frontend) | `apps/*/vercel.json`                             |
+## Key Entry Points
+
+| Task | Start Here |
+|------|-----------|
+| Add API endpoint | `packages/api/src/routes/` → create route, add service in `services/` |
+| Add database model | `packages/db/prisma/schema.prisma` → run `prisma migrate dev` |
+| Add shared type/validation | `packages/shared/src/types/` (enums, interfaces, validation) |
+| Add invitation section | `apps/invitation/src/components/sections/` + register in `section-rendering.ts` |
+| Add dashboard page | `apps/dashboard/src/app/(dashboard)/` (App Router) |
+| Modify real-time events | `packages/realtime/src/index.ts` (broadcast functions) |
+| Scanner offline logic | `apps/scanner/src/lib/` (indexed-db, offline-queue, sync-manager) |
+
+## Patterns That Deviate From Defaults
+
+| Pattern | Detail |
+|---------|--------|
+| Multi-tenant isolation | Every query scoped by `tenant_id` via middleware — not optional, not per-route |
+| PII encryption at rest | Guest phone/email encrypted before DB write, decrypted in service layer (`middleware/encryption.ts`) |
+| Denormalized `tenant_id` on Guest | Guest has both `event_id` and `tenant_id` for query performance (avoids JOIN) |
+| Pinned dependency versions | No `^` or `~` in app packages — exact versions only |
+| Single server for REST + WebSocket | Fastify and Socket.io share the same process on port 4000 |
+| Service Worker in `public/` | Scanner's `sw.js` is hand-written (not generated by next-pwa) |
+| TailwindCSS 4 (CSS-first) | No `tailwind.config.ts` — uses CSS `@import` and `@theme` directives |
+| UI language: Bahasa Indonesia | All user-facing text in Indonesian; code/comments in English |
+
+## Config & Tooling Discovery
+
+| File | What It Controls |
+|------|-----------------|
+| `turbo.json` | Build pipeline: `build` → `dev`, `lint`, `test` tasks with caching |
+| `.eslintrc.json` | TS recommended + prettier, warns on `no-console` and `no-explicit-any` |
+| `.prettierrc` | Single quotes, 100 width, trailing commas (es5), LF line endings |
+| `.husky/pre-commit` | Runs `scripts/detect-secrets.sh` — blocks commits with potential secrets |
+| `railway.toml` | Backend deploy config: nixpacks build, health check at `/health`, blue-green |
+| `apps/*/vercel.json` | Per-app Vercel config with security headers |
+| `packages/db/prisma/schema.prisma` | Database schema source of truth |
+| `.github/workflows/ci.yml` | Tests + lint + security audit + type-check gate |
+| `.github/workflows/deploy-backend.yml` | Railway blue-green deploy with auto-rollback |
+| `.github/workflows/deploy-frontend.yml` | Vercel deploy per changed app (detects via git diff) |
+
+## Domain Rules (Must Not Violate)
+
+1. **Tenant isolation** — Every DB query scoped by `tenant_id`. Never expose cross-tenant data.
+2. **Duplicate check-in prevention** — Second scan returns YELLOW warning, does not create new record.
+3. **Max 2 scanner devices per event** — Enforced in `ScannerDeviceService`.
+4. **Offline sync: server wins** — Conflict resolution uses server timestamp.
+5. **QR payload encrypted** — Contains `guest_id + event_id`, encrypted with app secret.
+6. **14 CMS sections** — Fixed set of section types (cover through music). Toggleable and reorderable, not user-creatable.
+7. **Guest capacity: 500 per event** — Enforced in `EventConfig.max_guests`.
+
+## Testing
+
+- ~1149 tests across all packages (Vitest + fast-check property-based)
+- Property-based tests cover: QR validation, RSVP invariants, duplicate detection, tenant isolation, offline sync, room isolation
+- Run: `npm run test` (all) or `npx turbo test --filter=@wedding/{package}`
+
+## Detailed Documentation
+
+For deeper information, see `.agents/summary/`:
+- `index.md` — Documentation navigation guide
+- `architecture.md` — System design and patterns
+- `components.md` — Component responsibilities and locations
+- `interfaces.md` — Full API endpoint reference
+- `data_models.md` — Database schema details
+- `workflows.md` — End-to-end flow diagrams
+- `dependencies.md` — Library versions and rationale
+
+## Custom Instructions
+<!-- This section is for human and agent-maintained operational knowledge.
+     Add repo-specific conventions, gotchas, and workflow rules here.
+     This section is preserved exactly as-is when re-running codebase-summary. -->

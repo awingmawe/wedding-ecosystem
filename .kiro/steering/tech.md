@@ -6,23 +6,23 @@ inclusion: always
 
 ## Frontend
 
-- **Framework**: Next.js 16.2 (React 19.2)
-- **Styling**: TailwindCSS 4.1
+- **Framework**: Next.js 16.2.6 (React 19.2.6)
+- **Styling**: TailwindCSS 4.3
 - **Component Library**: shadcn/ui (copy-paste, fully customizable)
-- **Animation**: Motion 12.17 (formerly Framer Motion) — Invitation App
-- **QR Scanning**: html5-qrcode 2.3
-- **Real-time**: Socket.io Client 4.8
-- **Data Fetching**: @tanstack/react-query 5.89
-- **Forms**: React Hook Form 7.62
+- **Animation**: Motion 12.38 (formerly Framer Motion) — Invitation App
+- **QR Scanning**: html5-qrcode 2.3.8
+- **Real-time**: Socket.io Client 4.8.3
+- **Data Fetching**: @tanstack/react-query 5.100
+- **Forms**: React Hook Form 7.75
 - **Fonts**: Playfair Display (headings) + Poppins (body)
 
 ## Backend
 
 - **Runtime**: Node.js 20+
-- **API Framework**: Fastify 5.3
+- **API Framework**: Fastify 5.8
 - **Database**: PostgreSQL
 - **ORM**: Prisma 7.7
-- **Cache/Pub-Sub**: Redis (ioredis 5.6)
+- **Cache/Pub-Sub**: Redis (ioredis 5.10)
 - **WebSocket**: Socket.io 4.8
 - **QR Generation**: qrcode (npm)
 - **Image Processing**: Sharp 0.34
@@ -41,33 +41,33 @@ inclusion: always
 ## Testing
 
 - **Unit/Integration Testing**: Vitest 3.2
-- **Property-Based Testing**: fast-check 4.2
+- **Property-Based Testing**: fast-check 4.8
 - **Coverage Target**: 80% minimum for business logic
 - **Key Test Areas**: QR validation, RSVP processing, duplicate detection, tenant isolation
 
 ## Pinned Dependency Versions
 
-| Package                      | Version |
-| ---------------------------- | ------- |
-| next                         | 16.2.0  |
-| react / react-dom            | 19.2.0  |
-| tailwindcss                  | 4.1.7   |
-| typescript                   | 5.9.3   |
-| zod                          | 3.25.3  |
-| vitest                       | 3.2.4   |
-| fast-check                   | 4.2.0   |
-| fastify                      | 5.3.2   |
-| socket.io / socket.io-client | 4.8.3   |
-| prisma / @prisma/client      | 7.7.0   |
-| motion                       | 12.17.0 |
-| sharp                        | 0.34.1  |
-| bcrypt                       | 6.0.0   |
-| jsonwebtoken                 | 9.0.2   |
-| react-hook-form              | 7.62.0  |
-| @tanstack/react-query        | 5.89.0  |
-| ioredis                      | 5.6.0   |
-| tsx                          | 4.20.3  |
-| turbo                        | ^2.4.0  |
+| Package                      | Version  |
+| ---------------------------- | -------- |
+| next                         | 16.2.6   |
+| react / react-dom            | 19.2.6   |
+| tailwindcss                  | 4.3.0    |
+| typescript                   | 5.9.3    |
+| zod                          | 3.25.3   |
+| vitest                       | 3.2.4    |
+| fast-check                   | 4.8.0    |
+| fastify                      | 5.8.5    |
+| socket.io / socket.io-client | 4.8.3    |
+| prisma / @prisma/client      | 7.7.0    |
+| motion                       | 12.38.0  |
+| sharp                        | 0.34.5   |
+| bcrypt                       | 6.0.0    |
+| jsonwebtoken                 | 9.0.3    |
+| react-hook-form              | 7.75.0   |
+| @tanstack/react-query        | 5.100.10 |
+| ioredis                      | 5.10.1   |
+| tsx                          | 4.20.3   |
+| turbo                        | ^2.4.0   |
 
 ## Common Commands
 
