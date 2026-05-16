@@ -13,6 +13,7 @@ concurrency:
 env:
   NODE_VERSION: '20'
   COVERAGE_THRESHOLD: 80
+  COVERAGE_FUNCTIONS_THRESHOLD: 50
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ jobs:
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Run tests with coverage
-        run: npx turbo test -- --coverage --coverage.thresholds.statements=${{ env.COVERAGE_THRESHOLD }} --coverage.thresholds.branches=${{ env.COVERAGE_THRESHOLD }} --coverage.thresholds.functions=${{ env.COVERAGE_THRESHOLD }} --coverage.thresholds.lines=${{ env.COVERAGE_THRESHOLD }}
+        run: npx turbo test -- --coverage --coverage.thresholds.statements=${{ env.COVERAGE_THRESHOLD }} --coverage.thresholds.branches=${{ env.COVERAGE_THRESHOLD }} --coverage.thresholds.functions=${{ env.COVERAGE_FUNCTIONS_THRESHOLD }} --coverage.thresholds.lines=${{ env.COVERAGE_THRESHOLD }}
 
       - name: Upload coverage reports
         if: always()

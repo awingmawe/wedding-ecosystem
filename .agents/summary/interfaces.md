@@ -4,94 +4,93 @@
 
 Base URL: `http://localhost:4000` (dev) / `https://api.domain.railway.app` (prod)
 
-### Authentication
+### Authentication (prefix: `/auth`)
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
 | POST | `/auth/login` | None | Login, returns JWT tokens |
 | POST | `/auth/refresh` | Refresh token | Refresh access token |
-| POST | `/auth/logout` | Access token | Revoke refresh token |
 
-### Events
-
-| Method | Endpoint | Auth | Roles | Description |
-|--------|----------|------|-------|-------------|
-| GET | `/events` | JWT | Admin, Client, WO | List tenant events |
-| POST | `/events` | JWT | Admin, Client | Create event |
-| GET | `/events/:id` | JWT | Admin, Client, WO | Get event details |
-| PUT | `/events/:id` | JWT | Admin, Client | Update event |
-| DELETE | `/events/:id` | JWT | Admin | Delete event |
-
-### Guests
-
-| Method | Endpoint | Auth | Roles | Description |
-|--------|----------|------|-------|-------------|
-| GET | `/events/:eventId/guests` | JWT | Admin, Client, WO | List guests (paginated) |
-| POST | `/events/:eventId/guests` | JWT | Admin, Client, WO | Add guest |
-| GET | `/events/:eventId/guests/:id` | JWT | Admin, Client, WO | Get guest details |
-| PUT | `/events/:eventId/guests/:id` | JWT | Admin, Client, WO | Update guest |
-| DELETE | `/events/:eventId/guests/:id` | JWT | Admin, Client | Delete guest |
-| POST | `/events/:eventId/guests/import` | JWT | Admin, Client | CSV bulk import (max 2000) |
-| GET | `/events/:eventId/guests/:id/qr` | JWT | Admin, Client, WO | Get QR code image |
-
-### RSVP
+### Events (prefix: `/events`)
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| POST | `/events/:eventId/rsvp` | None (public) | Submit RSVP |
-| GET | `/events/:eventId/rsvp/:guestId` | JWT | Get RSVP status |
+| GET | `/events/current` | JWT | Get current tenant's latest event |
+| GET | `/events/:id/stats` | JWT | Get event statistics (guests, RSVPs, check-ins) |
+| GET | `/events/:id/rsvp` | JWT | Get RSVP summary for event |
+| GET | `/events/:id/sections` | JWT | Get event sections (via events route) |
+| PUT | `/events/:id/sections/:sectionId/content` | JWT | Update section content (via events route) |
+| PUT | `/events/:id/sections/:sectionId/toggle` | JWT | Toggle section active (via events route) |
+| PUT | `/events/:id/sections/:sectionId/reorder` | JWT | Reorder section (via events route) |
+| POST | `/events/:id/media/upload` | JWT | Upload media for event |
 
-### Check-in
-
-| Method | Endpoint | Auth | Roles | Description |
-|--------|----------|------|-------|-------------|
-| POST | `/events/:eventId/checkin/verify` | JWT | Scanner | Verify QR scan |
-| POST | `/events/:eventId/checkin/manual` | JWT | Scanner | Manual check-in by name |
-| POST | `/events/:eventId/checkin/go-show` | JWT | Scanner | Register walk-in guest |
-| GET | `/events/:eventId/checkin/search` | JWT | Scanner | Search guests for manual check-in |
-
-### CMS (Invitation Sections)
-
-| Method | Endpoint | Auth | Roles | Description |
-|--------|----------|------|-------|-------------|
-| GET | `/events/:eventId/sections` | JWT | Admin, Client | List all sections |
-| GET | `/events/:eventId/sections/active` | None (public) | — | List active sections (for invitation) |
-| POST | `/events/:eventId/sections` | JWT | Admin, Client | Create section |
-| GET | `/events/:eventId/sections/:id` | JWT | Admin, Client | Get section |
-| PUT | `/events/:eventId/sections/:id/content` | JWT | Admin, Client | Update section content |
-| PUT | `/events/:eventId/sections/:id/toggle` | JWT | Admin, Client | Toggle section active |
-| PUT | `/events/:eventId/sections/sort` | JWT | Admin, Client | Reorder sections |
-| DELETE | `/events/:eventId/sections/:id` | JWT | Admin | Delete section |
-
-### Scanner Devices
-
-| Method | Endpoint | Auth | Roles | Description |
-|--------|----------|------|-------|-------------|
-| POST | `/events/:eventId/scanner/register` | JWT | Scanner | Register device (max 2) |
-| POST | `/events/:eventId/scanner/heartbeat` | JWT | Scanner | Device heartbeat |
-| DELETE | `/events/:eventId/scanner/:deviceId` | JWT | Scanner | Deactivate device |
-| GET | `/events/:eventId/scanner/devices` | JWT | Admin, WO | List active devices |
-
-### Notifications
-
-| Method | Endpoint | Auth | Roles | Description |
-|--------|----------|------|-------|-------------|
-| POST | `/events/:eventId/notifications/send` | JWT | Admin, Client | Send invitation to guest |
-| POST | `/events/:eventId/notifications/bulk` | JWT | Admin, Client | Bulk send (max 500) |
-| GET | `/events/:eventId/notifications/status` | JWT | Admin, Client | Delivery status |
-
-### Messages (Wishes)
+### Guests (prefix: `/guests`)
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| GET | `/events/:eventId/messages` | None (public) | List visible messages |
-| POST | `/events/:eventId/messages` | None (public) | Submit message/wish |
+| GET | `/guests` | JWT | List guests (paginated, filterable) |
+| POST | `/guests` | JWT | Create guest (auto-generates QR) |
+| PUT | `/guests/:id` | JWT | Update guest |
+| GET | `/guests/:id/qr` | JWT | Get guest QR code |
+| GET | `/guests/search` | JWT | Search guests by name (query: `q`, `event_id`) |
+| POST | `/guests/import` | JWT | CSV bulk import (max 2000) |
 
-### Invitations (Public)
+### Check-in (prefix: `/checkin`)
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| GET | `/invitations/:slug` | None | Get invitation data by event slug |
+| POST | `/checkin/scan` | JWT | Verify QR scan (returns GREEN/RED/YELLOW) |
+| POST | `/checkin/manual` | JWT | Manual check-in by guest_id |
+| POST | `/checkin/go-show` | JWT | Register walk-in guest + check-in |
+| POST | `/checkin/sync` | JWT | Sync offline check-in records |
+
+### Scanner Devices (prefix: `/scanner`)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/scanner/devices/register` | JWT | Register device (max 2 per event) |
+| PUT | `/scanner/devices/:deviceId/heartbeat` | JWT | Device heartbeat |
+| DELETE | `/scanner/devices/:deviceId` | JWT | Deactivate device |
+| GET | `/scanner/devices/:eventId` | JWT | List active devices for event |
+| GET | `/scanner/guests/:eventId` | JWT | Get guest cache for offline use |
+
+### RSVP (prefix: `/rsvp`)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/rsvp` | None (public) | Submit RSVP |
+| GET | `/rsvp/:guestId` | JWT | Get RSVP by guest |
+
+### CMS (prefix: `/cms`)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/cms/sections/:eventId` | JWT | List all sections for event |
+| GET | `/cms/sections/:eventId/:sectionId` | JWT | Get specific section |
+| PUT | `/cms/sections/:eventId/:sectionId/content` | JWT | Update section content |
+| PUT | `/cms/sections/:eventId/:sectionId/toggle` | JWT | Toggle section active |
+| PUT | `/cms/sections/:eventId/:sectionId/reorder` | JWT | Reorder section |
+
+### Notifications (prefix: `/notifications`)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/notifications/send` | JWT | Send invitation to single guest |
+| POST | `/notifications/send-bulk` | JWT | Bulk send invitations |
+
+### Messages (prefix: `/messages`)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/messages` | None (public) | Submit message/wish |
+| GET | `/messages/:eventId` | None (public) | Get messages for event |
+
+### Invitations (prefix: `/invitations`)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/invitations/:eventSlug/:guestSlug` | None | Get personalized invitation |
+| GET | `/invitations/:eventSlug` | None | Get event invitation data |
 
 ### Health
 
