@@ -14,7 +14,7 @@
 
 [build]
 builder = "nixpacks"
-buildCommand = "npm ci && npx prisma generate --schema=packages/db/prisma/schema.prisma && npx turbo build --filter=@wedding/api..."
+buildCommand = "rm -rf node_modules/.cache && npm ci && npx prisma generate --schema=packages/db/prisma/schema.prisma && npx turbo build --filter=@wedding/api..."
 
 [deploy]
 startCommand = "node packages/api/dist/cluster.js"
