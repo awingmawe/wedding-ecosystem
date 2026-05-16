@@ -13,8 +13,7 @@
 #   - redis-pubsub: Redis for Socket.io pub/sub adapter
 
 [build]
-builder = "nixpacks"
-buildCommand = "npm run build --filter=@wedding-digital/api"
+buildCommand = "npx turbo build --filter=@wedding-digital/api"
 
 [deploy]
 startCommand = "node packages/api/dist/cluster.js"
