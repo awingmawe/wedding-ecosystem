@@ -13,7 +13,8 @@
 #   - redis-pubsub: Redis for Socket.io pub/sub adapter
 
 [build]
-buildCommand = "npx turbo build --filter=@wedding-digital/api"
+builder = "nixpacks"
+buildCommand = "npm ci && npx prisma generate --schema=packages/db/prisma/schema.prisma && npx turbo build --filter=@wedding/api..."
 
 [deploy]
 startCommand = "node packages/api/dist/cluster.js"
