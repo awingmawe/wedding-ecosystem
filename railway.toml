@@ -17,7 +17,7 @@ builder = "railpack"
 buildCommand = "npm install && npx turbo build --filter=@wedding/api"
 
 [deploy]
-startCommand = "node packages/api/dist/cluster.js"
+startCommand = "node packages/api/dist/index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
