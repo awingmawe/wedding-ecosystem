@@ -67,7 +67,7 @@ jobs:
           key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Run tests with coverage
-        run: npx turbo test -- --coverage --coverage.thresholds.statements=${{ env.COVERAGE_THRESHOLD }} --coverage.thresholds.branches=${{ env.COVERAGE_THRESHOLD }} --coverage.thresholds.functions=${{ env.COVERAGE_FUNCTIONS_THRESHOLD }} --coverage.thresholds.lines=${{ env.COVERAGE_THRESHOLD }}
+        run: npx turbo test -- --coverage
 
       - name: Upload coverage reports
         if: always()

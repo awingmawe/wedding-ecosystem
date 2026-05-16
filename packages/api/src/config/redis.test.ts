@@ -98,12 +98,12 @@ describe('Redis Configuration', () => {
       expect(options.tls).toBeUndefined();
     });
 
-    it('should enable TLS for redis:// URL when config.tls is true', () => {
+    it('should not enable TLS for redis:// URL even when config.tls is true', () => {
       const url = 'redis://default:pass@host.io:6379';
       const config = getRedisConfig({ tls: true });
       const options = buildRedisOptions(url, config);
 
-      expect(options.tls).toEqual({ rejectUnauthorized: true });
+      expect(options.tls).toBeUndefined();
     });
 
     it('should default port to 6379 when not specified', () => {

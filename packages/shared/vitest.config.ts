@@ -14,6 +14,12 @@ export default defineConfig({
         'src/types/errors.ts',
         'src/utils/index.ts',
       ],
+      thresholds: {
+        statements: 80,
+        branches: 80,
+        functions: 50,
+        lines: 80,
+      },
     },
   },
 });
