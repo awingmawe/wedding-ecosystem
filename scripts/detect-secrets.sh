@@ -3,6 +3,9 @@
 # Scans staged files for common secret patterns (API keys, passwords, tokens, private keys)
 # Used by the pre-commit hook to block commits containing secrets.
 #
+# Supports inline suppression: add "nosecret" comment on the same line to skip detection.
+# Example: const url = 'rediss://default:pass@host.io:6379'; // nosecret - test fixture
+#
 # Exit codes:
 #   0 - No secrets detected
 #   1 - Secrets detected (commit should be blocked)
@@ -11,6 +14,7 @@ set -euo pipefail
 
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
 # Patterns that indicate secrets in source code
@@ -29,10 +33,10 @@ SECRET_PATTERNS=(
   'gh[pousr]_[A-Za-z0-9_]{36,}|||GitHub Token'
   # Generic bearer tokens
   '(?i)bearer\s+[a-zA-Z0-9_\-\.]{20,}|||Bearer Token'
-  # Supabase keys
+  # JWT tokens (possible Supabase/service keys)
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+|||JWT Token (possible Supabase key)'
   # Database connection strings with credentials
-  '(?i)(postgres|mysql|mongodb|redis)://[^:]+:[^@]+@|||Database Connection String with credentials'
+  '(?i)(postgres(ql)?|mysql|mongodb|redis(s)?)://[^:]+:[^@]+@|||Database Connection String with credentials'
   # Slack webhooks
   'https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[a-zA-Z0-9]+|||Slack Webhook URL'
   # Stripe keys
@@ -57,9 +61,15 @@ EXCLUDE_PATTERNS=(
   '\.next/'
   'coverage/'
   'detect-secrets\.sh$'
+  'secret-scanning\.yml$'
   '\.example$'
   '\.sample$'
   '\.md$'
+  # Test files — allowed to contain dummy credentials for unit testing
+  '\.test\.(ts|tsx|js|jsx)$'
+  '\.spec\.(ts|tsx|js|jsx)$'
+  '__tests__/'
+  '__mocks__/'
 )
 
 found_secrets=0
@@ -82,8 +92,9 @@ fi
 filter_files() {
   local files="$1"
   local filtered=""
-  
+
   while IFS= read -r file; do
+    [ -z "$file" ] && continue
     local exclude=false
     for pattern in "${EXCLUDE_PATTERNS[@]}"; do
       if echo "$file" | grep -qE "$pattern"; then
@@ -95,7 +106,7 @@ filter_files() {
       filtered="${filtered}${file}"$'\n'
     fi
   done <<< "$files"
-  
+
   echo "$filtered"
 }
 
@@ -105,18 +116,21 @@ if [ -z "$filtered_files" ]; then
   exit 0
 fi
 
+# Count files being scanned
+file_count=$(echo "$filtered_files" | grep -c . || true)
+
 # Scan each file for secret patterns
 while IFS= read -r file; do
   [ -z "$file" ] && continue
   [ ! -f "$file" ] && continue
-  
+
   for pattern_entry in "${SECRET_PATTERNS[@]}"; do
     pattern="${pattern_entry%%|||*}"
     description="${pattern_entry##*|||}"
-    
-    # Use grep with perl-compatible regex (-- separates options from pattern)
-    matches=$(grep -nP -- "$pattern" "$file" 2>/dev/null || true)
-    
+
+    # Find matches, then filter out lines with nosecret suppression comment
+    matches=$(grep -nP -- "$pattern" "$file" 2>/dev/null | grep -v 'nosecret' || true)
+
     if [ -n "$matches" ]; then
       found_secrets=1
       while IFS= read -r match; do
@@ -137,22 +151,26 @@ if [ $found_secrets -eq 1 ]; then
   echo -e "${RED}║  Potential secrets found in staged files:                    ║${NC}"
   echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
   echo ""
-  
+
   for finding in "${findings[@]}"; do
     echo -e "$finding"
   done
-  
+
   echo ""
   echo -e "${YELLOW}To fix:${NC}"
   echo "  1. Remove the secret from the file"
-  echo "  2. Store secrets in environment variables or a secret manager"
+  echo "  2. Store secrets in environment variables or .env.local (not tracked)"
   echo "  3. Add the file to .gitignore if it should not be tracked"
-  echo "  4. If this is a false positive, use: git commit --no-verify"
   echo ""
-  echo -e "${YELLOW}Note:${NC} If you believe this is a false positive, review the pattern"
-  echo "  and consider adding an exclusion in scripts/detect-secrets.sh"
+  echo -e "${YELLOW}False positive?${NC}"
+  echo "  Add a '// nosecret' comment on the same line to suppress detection."
+  echo "  Example: const KEY = 'scanner_access_token'; // nosecret - localStorage key name"
+  echo ""
+  echo -e "${YELLOW}Emergency bypass (use sparingly):${NC}"
+  echo "  git commit --no-verify"
   echo ""
   exit 1
 fi
 
+echo -e "${GREEN}✅ Secret scan passed${NC} (${file_count} files scanned)"
 exit 0

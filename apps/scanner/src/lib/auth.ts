@@ -11,12 +11,12 @@
 
 'use client';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // Storage keys
 const STORAGE_KEYS = {
-  ACCESS_TOKEN: 'scanner_access_token',
-  REFRESH_TOKEN: 'scanner_refresh_token',
+  ACCESS_TOKEN: 'scanner_access_token', // nosecret - localStorage key name
+  REFRESH_TOKEN: 'scanner_refresh_token', // nosecret - localStorage key name
   USER: 'scanner_user',
   TOKEN_EXPIRY: 'scanner_token_expiry',
   EVENT_ID: 'scanner_event_id',

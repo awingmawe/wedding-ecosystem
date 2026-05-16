@@ -58,7 +58,7 @@ export interface AuthMiddlewareConfig {
  * The client must pass the token via the `auth` option:
  * ```ts
  * const socket = io('wss://ws.example.com', {
- *   auth: { token: 'eyJhbGciOiJIUzI1NiIs...' }
+ *   auth: { token: 'eyJhbGciOiJIUzI1NiIs...' } // nosecret - example only
  * });
  * ```
  *
