@@ -6,15 +6,15 @@
   "types": "./src/index.ts",
   "scripts": {
     "build": "tsc",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint .",
     "test": "vitest run"
   },
   "dependencies": {
-    "sanitize-html": "2.16.0",
+    "sanitize-html": "2.17.4",
     "zod": "3.25.3"
   },
   "devDependencies": {
-    "@types/sanitize-html": "2.13.0",
+    "@types/sanitize-html": "2.16.1",
     "fast-check": "4.8.0",
     "typescript": "5.9.3",
     "vitest": "3.2.4"

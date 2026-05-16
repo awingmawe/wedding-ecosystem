@@ -32,7 +32,7 @@ function createInMemoryRepository(): ScannerDeviceRepository & {
   devices: ScannerDeviceRecord[];
 } {
   const devices: ScannerDeviceRecord[] = [];
-  let idCounter = 0;
+  const idCounter = 0;
 
   return {
     devices,
