@@ -4,7 +4,20 @@ import bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import 'dotenv/config';
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/wedding_digital_saas?schema=public';
+// Guard: prevent running seed in production
+if (process.env.NODE_ENV === 'production') {
+  console.error('❌ Seed script cannot be run in production environment.');
+  console.error('   Set NODE_ENV to "development" or "test" to run seeds.');
+  process.exit(1);
+}
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('❌ DATABASE_URL environment variable is required.');
+  console.error('   Set it in your .env file or environment.');
+  process.exit(1);
+}
+
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 

@@ -228,11 +228,22 @@ export async function cmsRoutes(app: FastifyInstance, opts: CMSRouteOptions) {
       });
     }
 
-    // For dev purposes, return a mock URL
-    // Real implementation would use multipart parsing + cloud storage + virus scan
+    // TODO: Implement real file upload via StorageService (presigned URL flow)
+    // For now, return a proper error in production or a placeholder in development
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction) {
+      return reply.status(501).send({
+        success: false,
+        error: {
+          code: 'SYS_0001',
+          message: 'Upload belum diimplementasikan. Gunakan endpoint /cms/media/presigned-url.',
+        },
+      });
+    }
+
     return reply.send({
       success: true,
-      url: `http://localhost:4000/uploads/mock-${Date.now()}.jpg`,
+      url: `/uploads/mock-${Date.now()}.jpg`,
     });
   });
 }

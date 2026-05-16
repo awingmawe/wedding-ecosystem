@@ -36,20 +36,22 @@ import {
 import { getFastifyLoggerConfig, createRequestLogger } from './config/logger';
 import { getFastifyProductionOptions, getProductionConfig } from './config/production';
 import { getCacheClient, disconnectRedis } from './config/redis';
+import { validateEnv } from './config/env';
 
-// --- Config ---
-const JWT_SECRET = process.env.JWT_SECRET || 'wedding-dev-secret-key';
-const REFRESH_SECRET = process.env.REFRESH_SECRET || 'wedding-dev-refresh-secret-key';
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+// --- Config (validated at startup) ---
+const env = validateEnv();
+const JWT_SECRET = env.JWT_SECRET;
+const REFRESH_SECRET = env.REFRESH_SECRET;
+const IS_PRODUCTION = env.NODE_ENV === 'production';
 
 // Production config (body limits, timeouts, trust proxy)
 const productionConfig = getProductionConfig();
 const PORT = productionConfig.server.port;
 
-// CORS origins (configurable via env)
-const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || 'http://localhost:3000';
-const INVITATION_ORIGIN = process.env.INVITATION_ORIGIN || 'http://localhost:3001';
-const SCANNER_ORIGIN = process.env.SCANNER_ORIGIN || 'http://localhost:3002';
+// CORS origins (from validated env config, fallback only for bare-minimum local dev without .env.local)
+const DASHBOARD_ORIGIN = env.DASHBOARD_ORIGIN || 'http://localhost:3000';
+const INVITATION_ORIGIN = env.INVITATION_ORIGIN || 'http://localhost:3001';
+const SCANNER_ORIGIN = env.SCANNER_ORIGIN || 'http://localhost:3002';
 
 // --- Prisma Client (production-ready with pool, SSL, timeouts) ---
 const prisma = createProductionPrismaClient();

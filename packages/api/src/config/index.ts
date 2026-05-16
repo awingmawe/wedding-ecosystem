@@ -76,3 +76,5 @@ export {
   validateEncryptionKeyAvailable,
   type EncryptionKeyConfig,
 } from './encryption-key';
+
+export { getEnvConfig, resetEnvConfig, validateEnv, type EnvConfig } from './env';
