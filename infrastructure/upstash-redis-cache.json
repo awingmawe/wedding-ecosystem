@@ -59,7 +59,7 @@
     "gracefulDegradationNote": "API continues operating without cache on connection failure"
   },
   "environmentVariables": {
-    "UPSTASH_REDIS_CACHE_URL": "rediss://default:{password}@grand-cattle-122365.upstash.io:6379",
+    "UPSTASH_REDIS_CACHE_URL": "rediss://default:<REDIS_PASSWORD>@grand-cattle-122365.upstash.io:6379",
     "UPSTASH_REDIS_CACHE_REST_URL": "https://grand-cattle-122365.upstash.io",
     "UPSTASH_REDIS_CACHE_REST_TOKEN": "Stored in secret manager - do not hardcode"
   },

@@ -1,23 +1,44 @@
 /**
  * Redis Integration Test
- * Tests actual Redis connectivity and operations against a running Redis instance.
+ * Tests actual Redis connectivity and operations against a local Redis instance.
  *
  * Requires: Redis running on localhost:6379
+ * Skips automatically if local Redis is not available.
+ *
  * Run: npx vitest run packages/api/src/config/redis.integration.test.ts
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Redis from 'ioredis';
 import { buildRedisOptions, getRedisConfig, createRetryStrategy } from './redis';
 
-const REDIS_URL = process.env.UPSTASH_REDIS_CACHE_URL as string;
+const LOCAL_REDIS_URL = 'redis://localhost:6379';
 const TEST_PREFIX = 'test:integration:';
 
-describe('Redis Integration (live connection)', () => {
+// Check if local Redis is available before running tests
+let redisAvailable = false;
+try {
+  const probe = new Redis({
+    host: 'localhost',
+    port: 6379,
+    connectTimeout: 1000,
+    lazyConnect: true,
+  });
+  await probe.connect();
+  await probe.ping();
+  await probe.quit();
+  redisAvailable = true;
+} catch {
+  redisAvailable = false;
+}
+
+const describeIfRedis = redisAvailable ? describe : describe.skip;
+
+describeIfRedis('Redis Integration (live connection)', () => {
   let client: Redis;
 
   beforeAll(async () => {
     const config = getRedisConfig({ tls: false });
-    const options = buildRedisOptions(REDIS_URL, config);
+    const options = buildRedisOptions(LOCAL_REDIS_URL, config);
     client = new Redis(options);
     await client.connect();
   });
@@ -54,7 +75,7 @@ describe('Redis Integration (live connection)', () => {
   describe('buildRedisOptions', () => {
     it('should produce working connection options for redis:// URL', () => {
       const config = getRedisConfig({ tls: false });
-      const options = buildRedisOptions(REDIS_URL, config);
+      const options = buildRedisOptions(LOCAL_REDIS_URL, config);
 
       expect(options.host).toBe('localhost');
       expect(options.port).toBe(6379);

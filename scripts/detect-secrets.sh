@@ -70,6 +70,10 @@ EXCLUDE_PATTERNS=(
   '\.spec\.(ts|tsx|js|jsx)$'
   '__tests__/'
   '__mocks__/'
+  # Infrastructure docs — contain placeholder URLs, not real secrets
+  'infrastructure/'
+  # Deployment configs — contain template variables (e.g. ${{PGPASSWORD}}), not real secrets
+  'railway\.toml$'
 )
 
 found_secrets=0
