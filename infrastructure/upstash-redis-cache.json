@@ -1,0 +1,94 @@
+{
+  "service": "redis-cache",
+  "provider": "upstash",
+  "purpose": "Production caching layer for session data, rate limit counters, and response caching",
+  "database": {
+    "name": "wedding-digital-prod-cache",
+    "region": "ap-southeast-1",
+    "endpoint": "grand-cattle-122365.upstash.io",
+    "port": 6379,
+    "tls": true,
+    "state": "active"
+  },
+  "configuration": {
+    "evictionPolicy": "allkeys-lru",
+    "evictionEnabled": false,
+    "evictionAction": "REQUIRED: Enable eviction via Upstash Console (https://console.upstash.com/redis/f72c073a-f32f-4ae8-844d-ce5d7b82b2d7) > Settings > Eviction toggle. This sets maxmemory-policy to allkeys-lru.",
+    "currentMaxmemoryPolicy": "noeviction (needs to be changed to allkeys-lru via console)",
+    "memoryThreshold": "64MB",
+    "maxClients": 10000,
+    "maxRequestSize": "10MB",
+    "maxEntrySize": "100MB",
+    "maxCommandsPerSecond": 10000
+  },
+  "useCases": {
+    "sessionData": {
+      "keyPattern": "session:{userId}",
+      "ttl": "24h",
+      "description": "User session tokens and metadata"
+    },
+    "rateLimiting": {
+      "keyPattern": "ratelimit:{endpoint}:{identifier}",
+      "ttl": "60s",
+      "description": "Per-endpoint rate limit counters (100/min general, 20/min auth, 300/min scanner)"
+    },
+    "responseCache": {
+      "keyPattern": "cache:{resource}:{id}",
+      "ttl": "varies",
+      "description": "Cached API responses (event details: 5min, CMS sections: 5min, guest list: 1min)"
+    }
+  },
+  "capacityPlanning": {
+    "targetConcurrentEvents": 50,
+    "estimatedKeysPerEvent": {
+      "sessions": 100,
+      "rateLimitCounters": 500,
+      "cachedResponses": 50
+    },
+    "estimatedTotalKeys": 32500,
+    "memoryEstimate": "~40MB for 50 concurrent events with average key sizes"
+  },
+  "connectionSettings": {
+    "timeout": 5000,
+    "retryStrategy": {
+      "maxRetries": 3,
+      "backoff": "exponential",
+      "initialDelay": 1000
+    },
+    "gracefulDegradation": true,
+    "gracefulDegradationNote": "API continues operating without cache on connection failure"
+  },
+  "environmentVariables": {
+    "UPSTASH_REDIS_CACHE_URL": "rediss://default:<REDIS_PASSWORD>@grand-cattle-122365.upstash.io:6379",
+    "UPSTASH_REDIS_CACHE_REST_URL": "https://grand-cattle-122365.upstash.io",
+    "UPSTASH_REDIS_CACHE_REST_TOKEN": "Stored in secret manager - do not hardcode"
+  },
+  "persistence": {
+    "rdbSnapshots": {
+      "status": "platform-managed",
+      "note": "Upstash manages RDB persistence at the platform level. On the free tier, Upstash automatically handles data persistence internally — users cannot configure custom RDB snapshot intervals (e.g., every 15 minutes). The platform ensures data survives restarts.",
+      "requiredBySpec": "RDB snapshots every 15 minutes (Requirement 5.3)",
+      "resolution": "Upstash's managed persistence provides equivalent durability. Custom RDB intervals are not user-configurable on any Upstash tier — this is handled transparently by the platform."
+    },
+    "aofPersistence": {
+      "status": "platform-managed",
+      "note": "Upstash handles AOF-equivalent persistence internally. Users cannot configure fsync policies directly.",
+      "requiredBySpec": "AOF with fsync every second (Requirement 5.3)"
+    },
+    "dailyBackups": {
+      "status": "requires-upgrade",
+      "currentTier": "free",
+      "requiredTier": "paid (Pay-as-you-go or Pro)",
+      "note": "Daily backups require a paid Upstash plan. Attempted to enable via mcp_upstash_redis_database_set_daily_backup but received: 'only paid databases can use backup feature'",
+      "requiredBySpec": "Automated Redis backup (Requirement 10.1)",
+      "actionRequired": "Upgrade database to paid tier, then enable daily backups via Upstash Console or MCP tool: mcp_upstash_redis_database_set_daily_backup with database_id f72c073a-f32f-4ae8-844d-ce5d7b82b2d7"
+    }
+  },
+  "separation": {
+    "note": "For current scale (1 event, ≤500 guests), this single instance handles BOTH cache and pub/sub. Socket.io adapter connects to this same instance via UPSTASH_REDIS_CACHE_URL fallback. At this scale, pub/sub traffic is negligible and won't cause eviction pressure.",
+    "dedicatedPubsubNeeded": false,
+    "scaleThreshold": "Consider separating when: multiple concurrent events, 1000+ guests, or observed cache eviction due to pub/sub memory pressure"
+  },
+  "createdAt": "2026-05-13T03:03:45+07:00",
+  "requirements": ["5.1", "5.2", "5.3", "10.1"]
+}

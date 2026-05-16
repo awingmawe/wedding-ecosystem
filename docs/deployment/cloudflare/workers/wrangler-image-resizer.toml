@@ -1,0 +1,44 @@
+# Cloudflare Worker Configuration: Image Resizer
+# Provides responsive image sizing and automatic WebP/AVIF conversion
+# for CMS-uploaded media stored in R2.
+#
+# Deploy: npx wrangler deploy --config wrangler-image-resizer.toml
+# Dev:    npx wrangler dev --config wrangler-image-resizer.toml
+#
+# Requirements: 7.3 (Image optimization: WebP conversion, responsive sizing)
+
+name = "image-resizer"
+main = "image-resizer.ts"
+compatibility_date = "2024-01-01"
+
+# Image Resizing requires the worker to be on a route (not workers.dev)
+# The worker intercepts /media/* requests and applies transformations
+
+# Route configuration — apply to media paths on all frontend domains
+# Replace {domain} with actual production domain
+# routes = [
+#   { pattern = "dashboard.{domain}/media/*", zone_name = "{domain}" },
+#   { pattern = "*.{domain}/media/*", zone_name = "{domain}" },
+#   { pattern = "{domain}/media/*", zone_name = "{domain}" }
+# ]
+
+[vars]
+ALLOWED_ORIGINS = "dashboard.example.com,example.com"
+
+# R2 bucket binding for CMS media storage
+# [[r2_buckets]]
+# binding = "MEDIA_BUCKET"
+# bucket_name = "wedding-media-production"
+
+[env.production]
+# Uncomment and configure for production deployment
+# routes = [
+#   { pattern = "*.yourdomain.com/media/*", zone_name = "yourdomain.com" }
+# ]
+
+# [env.production.vars]
+# ALLOWED_ORIGINS = "dashboard.yourdomain.com,yourdomain.com"
+
+# [[env.production.r2_buckets]]
+# binding = "MEDIA_BUCKET"
+# bucket_name = "wedding-media-production"

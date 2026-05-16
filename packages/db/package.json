@@ -6,7 +6,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "build": "tsc",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint .",
     "generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",

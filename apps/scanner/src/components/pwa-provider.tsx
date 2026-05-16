@@ -1,23 +1,28 @@
 /**
  * PWA Provider component.
- * Handles service worker registration and provides connectivity context.
+ * Handles service worker registration, connectivity, and event selection.
+ * Integrates with AuthProvider for token management.
  */
 
 'use client';
 
-import { useEffect, createContext, useContext, useState, type ReactNode } from 'react';
+import { useEffect, createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { registerServiceWorker } from '@/lib/service-worker-registration';
 import { useConnectivity, type ConnectivityState } from '@/lib/connectivity';
 import { ConnectivityIndicator } from './connectivity-indicator';
+import { useAuth } from './auth-provider';
+import { EventSelector } from './event-selector';
+import { getStoredEventId } from '@/lib/auth';
 
-// Default config — in production these would come from environment/auth
-const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3100';
-const DEFAULT_EVENT_ID = ''; // Set by scanner session
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 interface PWAContextValue extends ConnectivityState {
   apiBaseUrl: string;
+  authToken: string;
   eventId: string;
   setEventId: (id: string) => void;
+  /** Reset event selection (go back to event picker) */
+  resetEvent: () => void;
 }
 
 const PWAContext = createContext<PWAContextValue>({
@@ -25,9 +30,11 @@ const PWAContext = createContext<PWAContextValue>({
   syncStatus: 'idle',
   pendingCount: 0,
   lastSyncTime: null,
-  apiBaseUrl: DEFAULT_API_BASE_URL,
+  apiBaseUrl: API_BASE_URL,
+  authToken: '',
   eventId: '',
   setEventId: () => {},
+  resetEvent: () => {},
 });
 
 export function usePWA(): PWAContextValue {
@@ -39,10 +46,21 @@ interface PWAProviderProps {
 }
 
 export function PWAProvider({ children }: PWAProviderProps) {
-  const [eventId, setEventId] = useState(DEFAULT_EVENT_ID);
-  const apiBaseUrl = DEFAULT_API_BASE_URL;
-  // In production, authToken would come from auth context
-  const authToken = '';
+  const { accessToken, storedEventId } = useAuth();
+  const [eventId, setEventId] = useState('');
+  const [eventSelected, setEventSelected] = useState(false);
+
+  const authToken = accessToken || '';
+  const apiBaseUrl = API_BASE_URL;
+
+  // Try to restore event from previous session
+  useEffect(() => {
+    const stored = storedEventId || getStoredEventId();
+    if (stored) {
+      setEventId(stored);
+      setEventSelected(true);
+    }
+  }, [storedEventId]);
 
   const connectivity = useConnectivity({
     apiBaseUrl,
@@ -55,11 +73,28 @@ export function PWAProvider({ children }: PWAProviderProps) {
     registerServiceWorker();
   }, []);
 
+  const handleEventSelected = useCallback((selectedEventId: string) => {
+    setEventId(selectedEventId);
+    setEventSelected(true);
+  }, []);
+
+  const resetEvent = useCallback(() => {
+    setEventId('');
+    setEventSelected(false);
+  }, []);
+
+  // Show event selector if no event is selected
+  if (!eventSelected || !eventId) {
+    return <EventSelector onEventSelected={handleEventSelected} initialEventId={storedEventId} />;
+  }
+
   const contextValue: PWAContextValue = {
     ...connectivity,
     apiBaseUrl,
+    authToken,
     eventId,
     setEventId,
+    resetEvent,
   };
 
   return (
@@ -69,9 +104,7 @@ export function PWAProvider({ children }: PWAProviderProps) {
         pendingCount={connectivity.pendingCount}
       />
       {/* Add top padding to account for the fixed connectivity indicator */}
-      <div className="pt-10">
-        {children}
-      </div>
+      <div className="pt-10">{children}</div>
     </PWAContext.Provider>
   );
 }

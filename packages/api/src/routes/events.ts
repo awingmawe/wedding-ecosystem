@@ -255,10 +255,37 @@ export async function eventRoutes(app: FastifyInstance, opts: EventRouteOptions)
 
   // POST /events/:id/media/upload
   app.post('/:id/media/upload', async (request: FastifyRequest, reply) => {
-    // For dev purposes, just return a mock URL
-    // Real implementation would use multipart parsing + cloud storage
+    const user = request.user!;
+    const { id } = request.params as { id: string };
+
+    // Verify event belongs to tenant
+    const event = await prisma.event.findFirst({
+      where: { id, tenant_id: user.tenant_id },
+    });
+
+    if (!event) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
+      });
+    }
+
+    // TODO: Implement real file upload via StorageService (presigned URL flow)
+    // For now, return a proper error in production or a placeholder in development
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction) {
+      return reply.status(501).send({
+        success: false,
+        error: {
+          code: 'SYS_0001',
+          message: 'Upload belum diimplementasikan. Gunakan endpoint /cms/media/presigned-url.',
+        },
+      });
+    }
+
     return reply.send({
-      url: `http://localhost:4000/uploads/mock-${Date.now()}.jpg`,
+      success: true,
+      url: `/uploads/mock-${Date.now()}.jpg`,
     });
   });
 }

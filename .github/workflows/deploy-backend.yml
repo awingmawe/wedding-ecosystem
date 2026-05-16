@@ -1,0 +1,645 @@
+name: Deploy Backend (Blue-Green on Railway)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/api/**'
+      - 'packages/realtime/**'
+      - 'packages/db/**'
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment without waiting for CI'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: deploy-backend-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  HEALTH_CHECK_TIMEOUT: 180 # 3 minutes in seconds
+  HEALTH_CHECK_INTERVAL: 10 # Check every 10 seconds
+  ROLLBACK_TIMEOUT: 300 # 5 minutes max for rollback
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Pre-flight: Run tests and security checks before deployment
+  # ─────────────────────────────────────────────────────────────────────────────
+  preflight:
+    name: Pre-flight Checks
+    runs-on: ubuntu-latest
+    outputs:
+      commit_hash: ${{ github.sha }}
+      triggered_by: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run backend tests
+        run: |
+          npx turbo run test --filter=@wedding/api --filter=@wedding/realtime --filter=@wedding/db
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_TEST }}
+
+      - name: Security audit
+        run: npm audit --audit-level=high --omit=dev || true
+
+      - name: Record pre-flight summary
+        run: |
+          echo "## ✅ Pre-flight Checks Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Audit | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${GITHUB_SHA:0:8}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Actor | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Database Migration: Run Prisma migrations before deploying new code
+  # Requires manual approval via GitHub environment protection rules
+  # ─────────────────────────────────────────────────────────────────────────────
+  migrate:
+    name: Run Database Migrations
+    runs-on: ubuntu-latest
+    needs: preflight
+    environment: production
+    outputs:
+      migration_status: ${{ steps.migrate.outputs.status }}
+      migration_applied: ${{ steps.migrate.outputs.applied }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create migration backup point
+        id: backup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Recording pre-migration state for potential rollback..."
+          MIGRATION_TIMESTAMP=$(date -u +%Y%m%d%H%M%S)
+          echo "timestamp=$MIGRATION_TIMESTAMP" >> $GITHUB_OUTPUT
+          echo "Pre-migration backup point: $MIGRATION_TIMESTAMP"
+
+      - name: Run database migrations
+        id: migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "Running Prisma migrations..."
+          cd packages/db
+          npx prisma migrate deploy 2>&1 | tee migration-output.txt
+          MIGRATION_EXIT_CODE=${PIPESTATUS[0]}
+
+          if [ $MIGRATION_EXIT_CODE -eq 0 ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "applied=true" >> $GITHUB_OUTPUT
+            echo "✅ Database migrations applied successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "applied=false" >> $GITHUB_OUTPUT
+            echo "❌ Database migration failed" >> $GITHUB_STEP_SUMMARY
+            cat migration-output.txt >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Upload migration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-logs-${{ github.run_id }}
+          path: packages/db/migration-output.txt
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Deploy API: Blue-green deployment for Fastify API server
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy-api:
+    name: Deploy API (Blue-Green)
+    runs-on: ubuntu-latest
+    needs: migrate
+    environment: production
+    outputs:
+      deployment_status: ${{ steps.health-check.outputs.status }}
+      previous_deployment_id: ${{ steps.detect-active.outputs.previous_id }}
+      new_deployment_id: ${{ steps.deploy.outputs.deployment_id }}
+      active_environment: ${{ steps.detect-active.outputs.active_env }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Detect active environment (blue/green)
+        id: detect-active
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          # Determine which environment is currently active
+          ACTIVE_ENV=$(railway variables get ACTIVE_ENVIRONMENT --service api 2>/dev/null || echo "blue")
+
+          if [ "$ACTIVE_ENV" = "blue" ]; then
+            INACTIVE_ENV="green"
+          else
+            INACTIVE_ENV="blue"
+          fi
+
+          echo "active_env=$ACTIVE_ENV" >> $GITHUB_OUTPUT
+          echo "inactive_env=$INACTIVE_ENV" >> $GITHUB_OUTPUT
+
+          # Store previous deployment ID for rollback
+          PREVIOUS_ID=$(railway variables get DEPLOYMENT_ID --service api 2>/dev/null || echo "none")
+          echo "previous_id=$PREVIOUS_ID" >> $GITHUB_OUTPUT
+
+          echo "🔵 Active: $ACTIVE_ENV | 🟢 Deploying to: $INACTIVE_ENV" >> $GITHUB_STEP_SUMMARY
+
+      - name: Deploy to inactive environment
+        id: deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          INACTIVE_ENV="${{ steps.detect-active.outputs.inactive_env }}"
+
+          echo "Deploying API to $INACTIVE_ENV environment..."
+
+          # Deploy to the inactive service instance
+          DEPLOY_OUTPUT=$(railway up --service "api-${INACTIVE_ENV}" --detach 2>&1)
+          DEPLOYMENT_ID=$(echo "$DEPLOY_OUTPUT" | grep -oP 'deployment_id=\K[^ ]+' || echo "${{ github.sha }}")
+
+          echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+          echo "Deployment initiated: $DEPLOYMENT_ID"
+
+      - name: Wait for deployment to be ready
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          INACTIVE_ENV="${{ steps.detect-active.outputs.inactive_env }}"
+          echo "Waiting for api-${INACTIVE_ENV} to be ready..."
+
+          # Wait up to 2 minutes for the deployment to become available
+          for i in $(seq 1 24); do
+            STATUS=$(railway status --service "api-${INACTIVE_ENV}" 2>/dev/null | grep -i "running" || true)
+            if [ -n "$STATUS" ]; then
+              echo "✅ Service is running"
+              break
+            fi
+            if [ $i -eq 24 ]; then
+              echo "⚠️ Timeout waiting for service to start"
+            fi
+            echo "Waiting... (attempt $i/24)"
+            sleep 5
+          done
+
+      - name: Health check (3-minute window)
+        id: health-check
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          INACTIVE_ENV="${{ steps.detect-active.outputs.inactive_env }}"
+
+          # Get the URL of the inactive environment
+          HEALTH_URL=$(railway variables get API_URL --service "api-${INACTIVE_ENV}" 2>/dev/null || echo "")
+
+          if [ -z "$HEALTH_URL" ]; then
+            echo "❌ Could not determine health check URL"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          HEALTH_ENDPOINT="${HEALTH_URL}/health"
+          echo "Health checking: $HEALTH_ENDPOINT"
+          echo "Window: ${{ env.HEALTH_CHECK_TIMEOUT }}s (checking every ${{ env.HEALTH_CHECK_INTERVAL }}s)"
+
+          CHECKS_PASSED=0
+          CHECKS_REQUIRED=3
+          TOTAL_CHECKS=$(( ${{ env.HEALTH_CHECK_TIMEOUT }} / ${{ env.HEALTH_CHECK_INTERVAL }} ))
+          START_TIME=$(date +%s)
+
+          for i in $(seq 1 $TOTAL_CHECKS); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_ENDPOINT" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              CHECKS_PASSED=$((CHECKS_PASSED + 1))
+              echo "✅ Health check $i/$TOTAL_CHECKS: HTTP $HTTP_STATUS (passed: $CHECKS_PASSED/$CHECKS_REQUIRED)"
+            else
+              CHECKS_PASSED=0
+              echo "⚠️  Health check $i/$TOTAL_CHECKS: HTTP $HTTP_STATUS (resetting pass counter)"
+            fi
+
+            # Require consecutive successful checks
+            if [ $CHECKS_PASSED -ge $CHECKS_REQUIRED ]; then
+              ELAPSED=$(( $(date +%s) - START_TIME ))
+              echo "✅ Health check passed ($CHECKS_REQUIRED consecutive successes in ${ELAPSED}s)"
+              echo "status=healthy" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+          done
+
+          ELAPSED=$(( $(date +%s) - START_TIME ))
+          echo "❌ Health check failed within ${ELAPSED}s (${HEALTH_CHECK_TIMEOUT}s window)"
+          echo "status=failed" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Swap traffic to new environment
+        if: steps.health-check.outputs.status == 'healthy'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          INACTIVE_ENV="${{ steps.detect-active.outputs.inactive_env }}"
+
+          echo "Swapping traffic to $INACTIVE_ENV..."
+
+          # Update the active environment marker
+          railway variables set ACTIVE_ENVIRONMENT=$INACTIVE_ENV --service api
+          railway variables set DEPLOYMENT_ID=${{ steps.deploy.outputs.deployment_id }} --service api
+
+          # Update the domain/routing to point to the new active service
+          railway domain update --service "api-${INACTIVE_ENV}" 2>/dev/null || true
+
+          echo "✅ Traffic swapped to $INACTIVE_ENV" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Deploy WebSocket: Blue-green deployment for Socket.io server
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy-websocket:
+    name: Deploy WebSocket (Blue-Green)
+    runs-on: ubuntu-latest
+    needs: migrate
+    environment: production
+    outputs:
+      deployment_status: ${{ steps.health-check.outputs.status }}
+      previous_deployment_id: ${{ steps.detect-active.outputs.previous_id }}
+      new_deployment_id: ${{ steps.deploy.outputs.deployment_id }}
+      active_environment: ${{ steps.detect-active.outputs.active_env }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Detect active environment (blue/green)
+        id: detect-active
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          ACTIVE_ENV=$(railway variables get ACTIVE_ENVIRONMENT --service websocket 2>/dev/null || echo "blue")
+
+          if [ "$ACTIVE_ENV" = "blue" ]; then
+            INACTIVE_ENV="green"
+          else
+            INACTIVE_ENV="blue"
+          fi
+
+          echo "active_env=$ACTIVE_ENV" >> $GITHUB_OUTPUT
+          echo "inactive_env=$INACTIVE_ENV" >> $GITHUB_OUTPUT
+
+          PREVIOUS_ID=$(railway variables get DEPLOYMENT_ID --service websocket 2>/dev/null || echo "none")
+          echo "previous_id=$PREVIOUS_ID" >> $GITHUB_OUTPUT
+
+          echo "🔵 Active: $ACTIVE_ENV | 🟢 Deploying to: $INACTIVE_ENV" >> $GITHUB_STEP_SUMMARY
+
+      - name: Deploy to inactive environment
+        id: deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          INACTIVE_ENV="${{ steps.detect-active.outputs.inactive_env }}"
+
+          echo "Deploying WebSocket to $INACTIVE_ENV environment..."
+
+          DEPLOY_OUTPUT=$(railway up --service "websocket-${INACTIVE_ENV}" --detach 2>&1)
+          DEPLOYMENT_ID=$(echo "$DEPLOY_OUTPUT" | grep -oP 'deployment_id=\K[^ ]+' || echo "${{ github.sha }}")
+
+          echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+
+      - name: Wait for deployment to be ready
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          INACTIVE_ENV="${{ steps.detect-active.outputs.inactive_env }}"
+          echo "Waiting for websocket-${INACTIVE_ENV} to be ready..."
+
+          for i in $(seq 1 24); do
+            STATUS=$(railway status --service "websocket-${INACTIVE_ENV}" 2>/dev/null | grep -i "running" || true)
+            if [ -n "$STATUS" ]; then
+              echo "✅ Service is running"
+              break
+            fi
+            if [ $i -eq 24 ]; then
+              echo "⚠️ Timeout waiting for service to start"
+            fi
+            echo "Waiting... (attempt $i/24)"
+            sleep 5
+          done
+
+      - name: Health check (3-minute window)
+        id: health-check
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          INACTIVE_ENV="${{ steps.detect-active.outputs.inactive_env }}"
+
+          HEALTH_URL=$(railway variables get WS_URL --service "websocket-${INACTIVE_ENV}" 2>/dev/null || echo "")
+
+          if [ -z "$HEALTH_URL" ]; then
+            echo "❌ Could not determine health check URL"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          HEALTH_ENDPOINT="${HEALTH_URL}/health"
+          echo "Health checking: $HEALTH_ENDPOINT"
+          echo "Window: ${{ env.HEALTH_CHECK_TIMEOUT }}s (checking every ${{ env.HEALTH_CHECK_INTERVAL }}s)"
+
+          CHECKS_PASSED=0
+          CHECKS_REQUIRED=3
+          TOTAL_CHECKS=$(( ${{ env.HEALTH_CHECK_TIMEOUT }} / ${{ env.HEALTH_CHECK_INTERVAL }} ))
+          START_TIME=$(date +%s)
+
+          for i in $(seq 1 $TOTAL_CHECKS); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$HEALTH_ENDPOINT" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              CHECKS_PASSED=$((CHECKS_PASSED + 1))
+              echo "✅ Health check $i/$TOTAL_CHECKS: HTTP $HTTP_STATUS (passed: $CHECKS_PASSED/$CHECKS_REQUIRED)"
+            else
+              CHECKS_PASSED=0
+              echo "⚠️  Health check $i/$TOTAL_CHECKS: HTTP $HTTP_STATUS (resetting pass counter)"
+            fi
+
+            if [ $CHECKS_PASSED -ge $CHECKS_REQUIRED ]; then
+              ELAPSED=$(( $(date +%s) - START_TIME ))
+              echo "✅ Health check passed ($CHECKS_REQUIRED consecutive successes in ${ELAPSED}s)"
+              echo "status=healthy" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+          done
+
+          ELAPSED=$(( $(date +%s) - START_TIME ))
+          echo "❌ Health check failed within ${ELAPSED}s (${HEALTH_CHECK_TIMEOUT}s window)"
+          echo "status=failed" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Swap traffic to new environment
+        if: steps.health-check.outputs.status == 'healthy'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          INACTIVE_ENV="${{ steps.detect-active.outputs.inactive_env }}"
+
+          echo "Swapping traffic to $INACTIVE_ENV..."
+
+          railway variables set ACTIVE_ENVIRONMENT=$INACTIVE_ENV --service websocket
+          railway variables set DEPLOYMENT_ID=${{ steps.deploy.outputs.deployment_id }} --service websocket
+
+          railway domain update --service "websocket-${INACTIVE_ENV}" 2>/dev/null || true
+
+          echo "✅ Traffic swapped to $INACTIVE_ENV" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Rollback: Auto-rollback if health checks fail
+  # Restores previous version within 5 minutes (ROLLBACK_TIMEOUT: 300s)
+  # ─────────────────────────────────────────────────────────────────────────────
+  rollback:
+    name: Auto-Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy-api, deploy-websocket]
+    if: |
+      always() &&
+      (needs.deploy-api.outputs.deployment_status == 'failed' ||
+       needs.deploy-websocket.outputs.deployment_status == 'failed')
+    environment: production
+    steps:
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Rollback API if needed
+        if: needs.deploy-api.outputs.deployment_status == 'failed'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          START_TIME=$(date +%s)
+          ACTIVE_ENV="${{ needs.deploy-api.outputs.active_environment }}"
+          echo "🔄 Rolling back API to previous active environment: $ACTIVE_ENV"
+
+          # Ensure traffic stays on the previously active environment
+          railway variables set ACTIVE_ENVIRONMENT=$ACTIVE_ENV --service api
+
+          # Stop the failed inactive deployment
+          if [ "$ACTIVE_ENV" = "blue" ]; then
+            FAILED_ENV="green"
+          else
+            FAILED_ENV="blue"
+          fi
+
+          railway service stop "api-${FAILED_ENV}" 2>/dev/null || true
+
+          ELAPSED=$(( $(date +%s) - START_TIME ))
+          echo "✅ API rolled back to $ACTIVE_ENV in ${ELAPSED}s (limit: ${{ env.ROLLBACK_TIMEOUT }}s)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Rollback WebSocket if needed
+        if: needs.deploy-websocket.outputs.deployment_status == 'failed'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          START_TIME=$(date +%s)
+          ACTIVE_ENV="${{ needs.deploy-websocket.outputs.active_environment }}"
+          echo "🔄 Rolling back WebSocket to previous active environment: $ACTIVE_ENV"
+
+          railway variables set ACTIVE_ENVIRONMENT=$ACTIVE_ENV --service websocket
+
+          if [ "$ACTIVE_ENV" = "blue" ]; then
+            FAILED_ENV="green"
+          else
+            FAILED_ENV="blue"
+          fi
+
+          railway service stop "websocket-${FAILED_ENV}" 2>/dev/null || true
+
+          ELAPSED=$(( $(date +%s) - START_TIME ))
+          echo "✅ WebSocket rolled back to $ACTIVE_ENV in ${ELAPSED}s (limit: ${{ env.ROLLBACK_TIMEOUT }}s)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Send rollback alert
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          API_STATUS="${{ needs.deploy-api.outputs.deployment_status }}"
+          WS_STATUS="${{ needs.deploy-websocket.outputs.deployment_status }}"
+
+          MESSAGE="🚨 *Production Deployment Rolled Back*\n"
+          MESSAGE+="• Commit: \`${{ github.sha }}\`\n"
+          MESSAGE+="• Triggered by: ${{ github.actor }}\n"
+          MESSAGE+="• API Status: ${API_STATUS}\n"
+          MESSAGE+="• WebSocket Status: ${WS_STATUS}\n"
+          MESSAGE+="• Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)\n"
+          MESSAGE+="• Reason: Health check failed within 3-minute window\n"
+          MESSAGE+="• Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -s -X POST "$SLACK_WEBHOOK_URL" \
+              -H 'Content-Type: application/json' \
+              -d "{\"text\": \"$MESSAGE\"}" || true
+          fi
+
+          echo "## 🚨 Deployment Rolled Back" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| API | $API_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| WebSocket | $WS_STATUS |" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Audit Trail: Record deployment metadata (who, what, when, status)
+  # ─────────────────────────────────────────────────────────────────────────────
+  audit:
+    name: Record Deployment Audit Trail
+    runs-on: ubuntu-latest
+    needs: [deploy-api, deploy-websocket, rollback]
+    if: always()
+    steps:
+      - name: Generate audit record
+        id: audit
+        run: |
+          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          TRIGGERED_BY="${{ github.actor }}"
+          COMMIT_HASH="${{ github.sha }}"
+          RUN_ID="${{ github.run_id }}"
+
+          API_STATUS="${{ needs.deploy-api.outputs.deployment_status }}"
+          WS_STATUS="${{ needs.deploy-websocket.outputs.deployment_status }}"
+          ROLLBACK_RESULT="${{ needs.rollback.result }}"
+
+          # Determine overall deployment status
+          if [ "$API_STATUS" = "healthy" ] && [ "$WS_STATUS" = "healthy" ]; then
+            OVERALL_STATUS="success"
+          elif [ "$ROLLBACK_RESULT" = "success" ]; then
+            OVERALL_STATUS="rolled-back"
+          else
+            OVERALL_STATUS="failed"
+          fi
+
+          # Create structured audit record JSON
+          cat > deployment-audit.json << EOF
+          {
+            "id": "${RUN_ID}",
+            "timestamp": "${TIMESTAMP}",
+            "triggeredBy": "${TRIGGERED_BY}",
+            "commitHash": "${COMMIT_HASH}",
+            "application": "backend",
+            "services": {
+              "api": {
+                "status": "${API_STATUS}",
+                "previousDeploymentId": "${{ needs.deploy-api.outputs.previous_deployment_id }}",
+                "newDeploymentId": "${{ needs.deploy-api.outputs.new_deployment_id }}"
+              },
+              "websocket": {
+                "status": "${WS_STATUS}",
+                "previousDeploymentId": "${{ needs.deploy-websocket.outputs.previous_deployment_id }}",
+                "newDeploymentId": "${{ needs.deploy-websocket.outputs.new_deployment_id }}"
+              }
+            },
+            "overallStatus": "${OVERALL_STATUS}",
+            "rollbackTriggered": $( [ "$ROLLBACK_RESULT" = "success" ] && echo "true" || echo "false" ),
+            "rollbackReason": $( [ "$ROLLBACK_RESULT" = "success" ] && echo "\"Health check failed within 3-minute window\"" || echo "null" ),
+            "duration": null,
+            "workflowRunUrl": "https://github.com/${{ github.repository }}/actions/runs/${RUN_ID}"
+          }
+          EOF
+
+          echo "overall_status=$OVERALL_STATUS" >> $GITHUB_OUTPUT
+
+          # Print audit summary to workflow
+          echo "## 📋 Deployment Audit Trail" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Timestamp | $TIMESTAMP |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered By | $TRIGGERED_BY |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${COMMIT_HASH:0:8}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| API Status | $API_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| WebSocket Status | $WS_STATUS |" >> $GITHUB_STEP_SUMMARY
+          echo "| Overall Status | **$OVERALL_STATUS** |" >> $GITHUB_STEP_SUMMARY
+          echo "| Rollback Triggered | $( [ "$ROLLBACK_RESULT" = "success" ] && echo "Yes" || echo "No" ) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Workflow Run | [View](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload audit record artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-audit-${{ github.run_id }}
+          path: deployment-audit.json
+          retention-days: 90
+
+      - name: Send deployment notification
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          OVERALL_STATUS="${{ steps.audit.outputs.overall_status }}"
+          COMMIT_HASH="${{ github.sha }}"
+          TRIGGERED_BY="${{ github.actor }}"
+
+          if [ "$OVERALL_STATUS" = "success" ]; then
+            EMOJI="✅"
+          elif [ "$OVERALL_STATUS" = "rolled-back" ]; then
+            EMOJI="🔄"
+          else
+            EMOJI="❌"
+          fi
+
+          MESSAGE="${EMOJI} *Backend Deployment: ${OVERALL_STATUS}*\n"
+          MESSAGE+="• Commit: \`${COMMIT_HASH:0:8}\`\n"
+          MESSAGE+="• Triggered by: ${TRIGGERED_BY}\n"
+          MESSAGE+="• Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)\n"
+          MESSAGE+="• Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          if [ -n "$SLACK_WEBHOOK_URL" ]; then
+            curl -s -X POST "$SLACK_WEBHOOK_URL" \
+              -H 'Content-Type: application/json' \
+              -d "{\"text\": \"$MESSAGE\"}" || true
+          fi

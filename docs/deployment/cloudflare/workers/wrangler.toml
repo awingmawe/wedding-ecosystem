@@ -1,0 +1,25 @@
+# Cloudflare Worker Configuration
+# Security Headers Worker — enforces HSTS and security headers at the edge
+#
+# Deploy: npx wrangler deploy
+# Dev:    npx wrangler dev
+
+name = "security-headers"
+main = "security-headers-worker.ts"
+compatibility_date = "2024-01-01"
+
+# Route configuration — apply to all subdomains
+# Replace {domain} with actual production domain
+# routes = [
+#   { pattern = "dashboard.{domain}/*", zone_name = "{domain}" },
+#   { pattern = "scanner.{domain}/*", zone_name = "{domain}" },
+#   { pattern = "api.{domain}/*", zone_name = "{domain}" },
+#   { pattern = "ws.{domain}/*", zone_name = "{domain}" },
+#   { pattern = "*.{domain}/*", zone_name = "{domain}" }
+# ]
+
+[env.production]
+# Uncomment and configure for production deployment
+# routes = [
+#   { pattern = "*.yourdomain.com/*", zone_name = "yourdomain.com" }
+# ]

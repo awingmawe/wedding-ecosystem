@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Poppins } from 'next/font/google';
+import { AuthProvider } from '@/components/auth-provider';
 import { PWAProvider } from '@/components/pwa-provider';
 import { WebSocketProvider } from '@/components/websocket-provider';
 import './globals.css';
@@ -37,11 +38,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
       </head>
       <body className="font-body antialiased">
-        <PWAProvider>
-          <WebSocketProvider>
-            {children}
-          </WebSocketProvider>
-        </PWAProvider>
+        <AuthProvider>
+          <PWAProvider>
+            <WebSocketProvider>{children}</WebSocketProvider>
+          </PWAProvider>
+        </AuthProvider>
       </body>
     </html>
   );

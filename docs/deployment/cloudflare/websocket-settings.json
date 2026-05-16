@@ -1,0 +1,70 @@
+{
+  "description": "Cloudflare WebSocket subdomain configuration for Wedding Digital SaaS",
+  "requirement": "11.4",
+  "dns": {
+    "record": {
+      "type": "CNAME",
+      "name": "ws",
+      "content": "${WEBSOCKET_ORIGIN}",
+      "proxied": true,
+      "ttl": 1,
+      "comment": "WebSocket server (Socket.io 4.8) - Railway origin"
+    }
+  },
+  "zone_settings": {
+    "websockets": "on"
+  },
+  "load_balancer": {
+    "name": "ws.${DOMAIN}",
+    "session_affinity": "cookie",
+    "session_affinity_attributes": {
+      "samesite": "Strict",
+      "secure": "Always"
+    },
+    "steering_policy": "random",
+    "pool": {
+      "name": "websocket-railway-pool",
+      "origins": [
+        {
+          "name": "railway-websocket-primary",
+          "address": "${WEBSOCKET_ORIGIN}",
+          "enabled": true,
+          "weight": 1
+        }
+      ],
+      "minimum_origins": 1,
+      "check_regions": ["SEAS"]
+    },
+    "monitor": {
+      "type": "https",
+      "expected_codes": "200",
+      "method": "GET",
+      "path": "/health",
+      "interval": 10,
+      "timeout": 5,
+      "retries": 3,
+      "description": "WebSocket server health check"
+    }
+  },
+  "socket_io": {
+    "cookie": {
+      "name": "io",
+      "path": "/",
+      "httpOnly": true,
+      "sameSite": "strict"
+    },
+    "transports": ["websocket", "polling"],
+    "allowUpgrades": true,
+    "pingInterval": 25000,
+    "pingTimeout": 60000
+  },
+  "railway_lb": {
+    "sticky_sessions": true,
+    "health_check": {
+      "path": "/health",
+      "interval": "10s",
+      "timeout": "5s",
+      "unhealthy_threshold": 3
+    }
+  }
+}

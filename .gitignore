@@ -26,5 +26,12 @@ coverage/
 # Turbo
 .turbo/
 
+# Terraform
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.backup
+.terraform/
+
 # Misc
 *.tsbuildinfo

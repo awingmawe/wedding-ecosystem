@@ -4,6 +4,19 @@ import { Server, Socket } from 'socket.io';
 // Re-export stats service
 export { StatsService, type StatsRepository, type StatsBroadcaster } from './stats';
 
+// Re-export auth middleware for WebSocket authentication
+export {
+  createAuthMiddleware,
+  authorizeRoomJoin,
+  registerRoomAuthorization,
+} from './middleware/auth';
+export type {
+  SocketTokenPayload,
+  AuthenticatedSocketData,
+  EventAuthRepository,
+  AuthMiddlewareConfig,
+} from './middleware/auth';
+
 // --- Event Types ---
 
 /** WebSocket event names emitted by the server */
@@ -109,9 +122,7 @@ export interface RealtimeServer {
  *
  * Requirements: 9.1, 9.2, 9.3, 9.6, 9.8
  */
-export function createRealtimeServer(
-  options: RealtimeServerOptions = {}
-): RealtimeServer {
+export function createRealtimeServer(options: RealtimeServerOptions = {}): RealtimeServer {
   const { cors, httpServer } = options;
 
   const io = new Server(httpServer, {
@@ -200,34 +211,22 @@ export function createRealtimeServer(
 
   // --- Broadcast Functions ---
 
-  function broadcastCheckIn(
-    eventId: string,
-    payload: GuestCheckedInPayload
-  ): void {
+  function broadcastCheckIn(eventId: string, payload: GuestCheckedInPayload): void {
     const room = getEventRoom(eventId);
     io.to(room).emit(RealtimeEvent.GUEST_CHECKED_IN, payload);
   }
 
-  function broadcastRsvpUpdate(
-    eventId: string,
-    payload: RsvpUpdatedPayload
-  ): void {
+  function broadcastRsvpUpdate(eventId: string, payload: RsvpUpdatedPayload): void {
     const room = getEventRoom(eventId);
     io.to(room).emit(RealtimeEvent.RSVP_UPDATED, payload);
   }
 
-  function broadcastGoShow(
-    eventId: string,
-    payload: GoShowAddedPayload
-  ): void {
+  function broadcastGoShow(eventId: string, payload: GoShowAddedPayload): void {
     const room = getEventRoom(eventId);
     io.to(room).emit(RealtimeEvent.GO_SHOW_ADDED, payload);
   }
 
-  function broadcastStats(
-    eventId: string,
-    payload: StatsUpdatedPayload
-  ): void {
+  function broadcastStats(eventId: string, payload: StatsUpdatedPayload): void {
     const room = getEventRoom(eventId);
     io.to(room).emit(RealtimeEvent.STATS_UPDATED, payload);
   }

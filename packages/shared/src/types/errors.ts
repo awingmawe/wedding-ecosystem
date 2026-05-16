@@ -53,6 +53,7 @@ export enum ErrorCode {
   INVALID_FILE_FORMAT = 'UPLOAD_10002',
   MALWARE_DETECTED = 'UPLOAD_10003',
   UPLOAD_FAILED = 'UPLOAD_10004',
+  STORAGE_QUOTA_EXCEEDED = 'UPLOAD_10005',
 
   // Rate limiting (11xxx)
   RATE_LIMIT_EXCEEDED = 'RATE_11001',
@@ -127,6 +128,7 @@ export const ERROR_HTTP_STATUS: Record<ErrorCode, number> = {
   [ErrorCode.INVALID_FILE_FORMAT]: 415,
   [ErrorCode.MALWARE_DETECTED]: 422,
   [ErrorCode.UPLOAD_FAILED]: 500,
+  [ErrorCode.STORAGE_QUOTA_EXCEEDED]: 413,
 
   [ErrorCode.RATE_LIMIT_EXCEEDED]: 429,
 

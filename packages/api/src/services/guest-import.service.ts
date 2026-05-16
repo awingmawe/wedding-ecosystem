@@ -152,10 +152,7 @@ export interface ValidatedRow {
  * Validate a single CSV row.
  * Returns either a validated row or an error reason string.
  */
-export function validateRow(
-  row: CSVRow,
-  existingNames: Set<string>
-): ValidatedRow | string {
+export function validateRow(row: CSVRow, existingNames: Set<string>): ValidatedRow | string {
   // Check required field: nama
   const nama = row.nama?.trim();
   if (!nama || nama === '') {
@@ -233,9 +230,7 @@ export async function bulkImportGuests(
   const { rows, headers } = parseCSV(csvText);
 
   // Validate CSV has required columns
-  const missingColumns = REQUIRED_COLUMNS.filter(
-    (col) => !headers.includes(col)
-  );
+  const missingColumns = REQUIRED_COLUMNS.filter((col) => !headers.includes(col));
   if (missingColumns.length > 0) {
     report.failedRows.push({
       row: 0,
@@ -254,9 +249,7 @@ export async function bulkImportGuests(
   }
 
   // Build set of existing names for duplicate detection within event
-  const existingNamesSet = new Set(
-    existingGuestNames.map((n) => n.toLowerCase())
-  );
+  const existingNamesSet = new Set(existingGuestNames.map((n) => n.toLowerCase()));
 
   // Process each row
   for (let i = 0; i < rows.length; i++) {

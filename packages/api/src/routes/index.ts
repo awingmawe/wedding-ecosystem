@@ -8,3 +8,4 @@ export { rsvpRoutes } from './rsvp';
 export { cmsRoutes } from './cms';
 export { scannerRoutes } from './scanner';
 export { messageRoutes } from './messages';
+export { healthRoutes } from './health';

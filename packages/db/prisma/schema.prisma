@@ -187,6 +187,7 @@ model Guest {
 
   @@unique([event_id, slug])
   @@index([tenant_id])
+  @@index([event_id])
   @@index([slug])
   @@map("guests")
 }
@@ -202,6 +203,7 @@ model QRCode {
 
   guest Guest @relation(fields: [guest_id], references: [id], onDelete: Cascade)
 
+  @@index([guest_id])
   @@index([qr_payload])
   @@map("qr_codes")
 }
@@ -216,6 +218,7 @@ model RSVP {
 
   guest Guest @relation(fields: [guest_id], references: [id], onDelete: Cascade)
 
+  @@index([guest_id])
   @@map("rsvps")
 }
 
@@ -230,6 +233,8 @@ model CheckIn {
   guest          Guest          @relation(fields: [guest_id], references: [id], onDelete: Cascade)
   scanner_device ScannerDevice? @relation(fields: [scanner_device_id], references: [id], onDelete: SetNull)
 
+  @@index([guest_id])
+  @@index([checked_in_at])
   @@map("check_ins")
 }
 
@@ -246,6 +251,7 @@ model InvitationSection {
   event Event @relation(fields: [event_id], references: [id], onDelete: Cascade)
 
   @@unique([event_id, sort_order])
+  @@index([event_id])
   @@map("invitation_sections")
 }
 
@@ -261,6 +267,7 @@ model ScannerDevice {
   event     Event     @relation(fields: [event_id], references: [id], onDelete: Cascade)
   check_ins CheckIn[]
 
+  @@index([event_id])
   @@map("scanner_devices")
 }
 
@@ -275,5 +282,6 @@ model Message {
 
   event Event @relation(fields: [event_id], references: [id], onDelete: Cascade)
 
+  @@index([event_id])
   @@map("messages")
 }

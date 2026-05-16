@@ -1,0 +1,494 @@
+name: Deploy Frontend (Vercel)
+
+on:
+  push:
+    branches: [main, release, 'release/**']
+    paths:
+      - 'apps/dashboard/**'
+      - 'apps/invitation/**'
+      - 'apps/scanner/**'
+      - 'packages/shared/**'
+
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'App to deploy (dashboard, invitation, scanner, all)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - dashboard
+          - invitation
+          - scanner
+
+concurrency:
+  group: deploy-frontend-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Wait for CI to pass before deploying
+  # ─────────────────────────────────────────────────────────────────────────────
+  wait-for-ci:
+    name: Wait for CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for CI workflow to succeed
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.sha }}
+          check-name: 'Security Gate'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+          allowed-conclusions: success
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Detect which apps have changed using git diff
+  # ─────────────────────────────────────────────────────────────────────────────
+  detect-changes:
+    name: Detect Changed Apps
+    runs-on: ubuntu-latest
+    needs: wait-for-ci
+    outputs:
+      dashboard: ${{ steps.changes.outputs.dashboard }}
+      invitation: ${{ steps.changes.outputs.invitation }}
+      scanner: ${{ steps.changes.outputs.scanner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed apps
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            APP="${{ github.event.inputs.app }}"
+            if [ "$APP" = "all" ] || [ "$APP" = "dashboard" ]; then
+              echo "dashboard=true" >> $GITHUB_OUTPUT
+            else
+              echo "dashboard=false" >> $GITHUB_OUTPUT
+            fi
+            if [ "$APP" = "all" ] || [ "$APP" = "invitation" ]; then
+              echo "invitation=true" >> $GITHUB_OUTPUT
+            else
+              echo "invitation=false" >> $GITHUB_OUTPUT
+            fi
+            if [ "$APP" = "all" ] || [ "$APP" = "scanner" ]; then
+              echo "scanner=true" >> $GITHUB_OUTPUT
+            else
+              echo "scanner=false" >> $GITHUB_OUTPUT
+            fi
+            exit 0
+          fi
+
+          # Check for shared package changes (triggers all apps)
+          SHARED_CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'packages/shared/' | wc -l)
+
+          # Dashboard
+          DASHBOARD_CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'apps/dashboard/' | wc -l)
+          if [ "$DASHBOARD_CHANGED" -gt 0 ] || [ "$SHARED_CHANGED" -gt 0 ]; then
+            echo "dashboard=true" >> $GITHUB_OUTPUT
+          else
+            echo "dashboard=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Invitation
+          INVITATION_CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'apps/invitation/' | wc -l)
+          if [ "$INVITATION_CHANGED" -gt 0 ] || [ "$SHARED_CHANGED" -gt 0 ]; then
+            echo "invitation=true" >> $GITHUB_OUTPUT
+          else
+            echo "invitation=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Scanner
+          SCANNER_CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'apps/scanner/' | wc -l)
+          if [ "$SCANNER_CHANGED" -gt 0 ] || [ "$SHARED_CHANGED" -gt 0 ]; then
+            echo "scanner=true" >> $GITHUB_OUTPUT
+          else
+            echo "scanner=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Summary
+        run: |
+          echo "## Changed Apps" >> $GITHUB_STEP_SUMMARY
+          echo "- Dashboard: ${{ steps.changes.outputs.dashboard }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Invitation: ${{ steps.changes.outputs.invitation }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Scanner: ${{ steps.changes.outputs.scanner }}" >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Deploy Dashboard App
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy-dashboard:
+    name: Deploy Dashboard
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.dashboard == 'true'
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token=${{ env.VERCEL_TOKEN }}
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_DASHBOARD }}
+
+      - name: Build with Vercel
+        run: vercel build --prod --token=${{ env.VERCEL_TOKEN }}
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_DASHBOARD }}
+
+      - name: Deploy to Vercel (Production)
+        id: deploy
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ env.VERCEL_TOKEN }})
+          echo "url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "## Dashboard Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "URL: $DEPLOYMENT_URL" >> $GITHUB_STEP_SUMMARY
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_DASHBOARD }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Deploy Invitation App
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy-invitation:
+    name: Deploy Invitation
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.invitation == 'true'
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token=${{ env.VERCEL_TOKEN }}
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_INVITATION }}
+
+      - name: Build with Vercel
+        run: vercel build --prod --token=${{ env.VERCEL_TOKEN }}
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_INVITATION }}
+
+      - name: Deploy to Vercel (Production)
+        id: deploy
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ env.VERCEL_TOKEN }})
+          echo "url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "## Invitation Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "URL: $DEPLOYMENT_URL" >> $GITHUB_STEP_SUMMARY
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_INVITATION }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Deploy Scanner App
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy-scanner:
+    name: Deploy Scanner
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.scanner == 'true'
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token=${{ env.VERCEL_TOKEN }}
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_SCANNER }}
+
+      - name: Build with Vercel
+        run: vercel build --prod --token=${{ env.VERCEL_TOKEN }}
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_SCANNER }}
+
+      - name: Deploy to Vercel (Production)
+        id: deploy
+        run: |
+          DEPLOYMENT_URL=$(vercel deploy --prebuilt --prod --token=${{ env.VERCEL_TOKEN }})
+          echo "url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+          echo "## Scanner Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "URL: $DEPLOYMENT_URL" >> $GITHUB_STEP_SUMMARY
+        env:
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID_SCANNER }}
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Post-deployment smoke tests — verify CDN asset accessibility
+  # ─────────────────────────────────────────────────────────────────────────────
+  smoke-test-dashboard:
+    name: Smoke Test - Dashboard
+    runs-on: ubuntu-latest
+    needs: deploy-dashboard
+    if: always() && needs.deploy-dashboard.result == 'success'
+    steps:
+      - name: Wait for deployment propagation
+        run: sleep 15
+
+      - name: Verify Dashboard CDN assets
+        run: |
+          echo "## Dashboard Smoke Test" >> $GITHUB_STEP_SUMMARY
+          DASHBOARD_URL="${{ secrets.DASHBOARD_URL }}"
+          if [ -z "$DASHBOARD_URL" ]; then
+            DASHBOARD_URL="${{ needs.deploy-dashboard.outputs.url }}"
+          fi
+
+          FAILED=0
+
+          # Verify main page returns 200
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$DASHBOARD_URL")
+          if [ "$STATUS" -ne 200 ]; then
+            echo "❌ Dashboard main page: HTTP $STATUS" >> $GITHUB_STEP_SUMMARY
+            FAILED=1
+          else
+            echo "✅ Dashboard main page: HTTP $STATUS" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Verify Next.js static chunks are served via CDN (check _next/static path)
+          # Fetch the HTML and extract a JS chunk URL
+          CHUNK_URL=$(curl -s --max-time 15 "$DASHBOARD_URL" | grep -oP '/_next/static/[^"]+\.js' | head -1)
+          if [ -n "$CHUNK_URL" ]; then
+            ASSET_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${DASHBOARD_URL}${CHUNK_URL}")
+            if [ "$ASSET_STATUS" -eq 200 ]; then
+              echo "✅ Dashboard JS chunk accessible: HTTP $ASSET_STATUS" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ Dashboard JS chunk failed: HTTP $ASSET_STATUS ($CHUNK_URL)" >> $GITHUB_STEP_SUMMARY
+              FAILED=1
+            fi
+          else
+            echo "⚠️ No JS chunk found in Dashboard HTML (may use inline scripts)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Verify CSS assets
+          CSS_URL=$(curl -s --max-time 15 "$DASHBOARD_URL" | grep -oP '/_next/static/[^"]+\.css' | head -1)
+          if [ -n "$CSS_URL" ]; then
+            CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${DASHBOARD_URL}${CSS_URL}")
+            if [ "$CSS_STATUS" -eq 200 ]; then
+              echo "✅ Dashboard CSS accessible: HTTP $CSS_STATUS" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ Dashboard CSS failed: HTTP $CSS_STATUS ($CSS_URL)" >> $GITHUB_STEP_SUMMARY
+              FAILED=1
+            fi
+          fi
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::Dashboard smoke test failed"
+            exit 1
+          fi
+
+  smoke-test-invitation:
+    name: Smoke Test - Invitation
+    runs-on: ubuntu-latest
+    needs: deploy-invitation
+    if: always() && needs.deploy-invitation.result == 'success'
+    steps:
+      - name: Wait for deployment propagation
+        run: sleep 15
+
+      - name: Verify Invitation CDN assets
+        run: |
+          echo "## Invitation Smoke Test" >> $GITHUB_STEP_SUMMARY
+          INVITATION_URL="${{ secrets.INVITATION_URL }}"
+          if [ -z "$INVITATION_URL" ]; then
+            INVITATION_URL="${{ needs.deploy-invitation.outputs.url }}"
+          fi
+
+          FAILED=0
+
+          # Verify main page returns 200
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$INVITATION_URL")
+          if [ "$STATUS" -ne 200 ]; then
+            echo "❌ Invitation main page: HTTP $STATUS" >> $GITHUB_STEP_SUMMARY
+            FAILED=1
+          else
+            echo "✅ Invitation main page: HTTP $STATUS" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Verify Next.js static JS chunks via CDN
+          CHUNK_URL=$(curl -s --max-time 15 "$INVITATION_URL" | grep -oP '/_next/static/[^"]+\.js' | head -1)
+          if [ -n "$CHUNK_URL" ]; then
+            ASSET_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${INVITATION_URL}${CHUNK_URL}")
+            if [ "$ASSET_STATUS" -eq 200 ]; then
+              echo "✅ Invitation JS chunk accessible: HTTP $ASSET_STATUS" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ Invitation JS chunk failed: HTTP $ASSET_STATUS ($CHUNK_URL)" >> $GITHUB_STEP_SUMMARY
+              FAILED=1
+            fi
+          else
+            echo "⚠️ No JS chunk found in Invitation HTML" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Verify CSS assets
+          CSS_URL=$(curl -s --max-time 15 "$INVITATION_URL" | grep -oP '/_next/static/[^"]+\.css' | head -1)
+          if [ -n "$CSS_URL" ]; then
+            CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${INVITATION_URL}${CSS_URL}")
+            if [ "$CSS_STATUS" -eq 200 ]; then
+              echo "✅ Invitation CSS accessible: HTTP $CSS_STATUS" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ Invitation CSS failed: HTTP $CSS_STATUS ($CSS_URL)" >> $GITHUB_STEP_SUMMARY
+              FAILED=1
+            fi
+          fi
+
+          # Verify cache headers indicate CDN serving
+          CACHE_HEADER=$(curl -s -I --max-time 15 "$INVITATION_URL" | grep -i 'x-vercel-cache' | tr -d '\r')
+          if [ -n "$CACHE_HEADER" ]; then
+            echo "✅ CDN cache header present: $CACHE_HEADER" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::Invitation smoke test failed"
+            exit 1
+          fi
+
+  smoke-test-scanner:
+    name: Smoke Test - Scanner
+    runs-on: ubuntu-latest
+    needs: deploy-scanner
+    if: always() && needs.deploy-scanner.result == 'success'
+    steps:
+      - name: Wait for deployment propagation
+        run: sleep 15
+
+      - name: Verify Scanner CDN assets and PWA
+        run: |
+          echo "## Scanner Smoke Test" >> $GITHUB_STEP_SUMMARY
+          SCANNER_URL="${{ secrets.SCANNER_URL }}"
+          if [ -z "$SCANNER_URL" ]; then
+            SCANNER_URL="${{ needs.deploy-scanner.outputs.url }}"
+          fi
+
+          FAILED=0
+
+          # Verify main page returns 200
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$SCANNER_URL")
+          if [ "$STATUS" -ne 200 ]; then
+            echo "❌ Scanner main page: HTTP $STATUS" >> $GITHUB_STEP_SUMMARY
+            FAILED=1
+          else
+            echo "✅ Scanner main page: HTTP $STATUS" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Verify service worker is accessible (PWA requirement)
+          SW_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$SCANNER_URL/sw.js")
+          if [ "$SW_STATUS" -eq 200 ]; then
+            echo "✅ Service worker accessible: HTTP $SW_STATUS" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Service worker not accessible: HTTP $SW_STATUS" >> $GITHUB_STEP_SUMMARY
+            FAILED=1
+          fi
+
+          # Verify manifest.json for PWA
+          MANIFEST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$SCANNER_URL/manifest.json")
+          if [ "$MANIFEST_STATUS" -eq 200 ]; then
+            echo "✅ PWA manifest accessible: HTTP $MANIFEST_STATUS" >> $GITHUB_STEP_SUMMARY
+          else
+            # Try manifest.webmanifest as alternative
+            MANIFEST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$SCANNER_URL/manifest.webmanifest")
+            if [ "$MANIFEST_STATUS" -eq 200 ]; then
+              echo "✅ PWA manifest accessible (.webmanifest): HTTP $MANIFEST_STATUS" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ PWA manifest not found (non-blocking)" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          # Verify Next.js static JS chunks via CDN
+          CHUNK_URL=$(curl -s --max-time 15 "$SCANNER_URL" | grep -oP '/_next/static/[^"]+\.js' | head -1)
+          if [ -n "$CHUNK_URL" ]; then
+            ASSET_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${SCANNER_URL}${CHUNK_URL}")
+            if [ "$ASSET_STATUS" -eq 200 ]; then
+              echo "✅ Scanner JS chunk accessible: HTTP $ASSET_STATUS" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ Scanner JS chunk failed: HTTP $ASSET_STATUS ($CHUNK_URL)" >> $GITHUB_STEP_SUMMARY
+              FAILED=1
+            fi
+          else
+            echo "⚠️ No JS chunk found in Scanner HTML" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::Scanner smoke test failed"
+            exit 1
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Deployment summary
+  # ─────────────────────────────────────────────────────────────────────────────
+  deployment-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs:
+      [
+        deploy-dashboard,
+        deploy-invitation,
+        deploy-scanner,
+        smoke-test-dashboard,
+        smoke-test-invitation,
+        smoke-test-scanner,
+      ]
+    if: always()
+    steps:
+      - name: Generate deployment report
+        run: |
+          echo "## Frontend Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| App | Deploy | Smoke Test |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Dashboard | ${{ needs.deploy-dashboard.result || 'skipped' }} | ${{ needs.smoke-test-dashboard.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Invitation | ${{ needs.deploy-invitation.result || 'skipped' }} | ${{ needs.smoke-test-invitation.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Scanner | ${{ needs.deploy-scanner.result || 'skipped' }} | ${{ needs.smoke-test-scanner.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp:** $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY

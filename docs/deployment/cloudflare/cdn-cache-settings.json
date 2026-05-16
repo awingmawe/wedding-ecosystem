@@ -1,0 +1,113 @@
+{
+  "description": "Cloudflare CDN Cache, Compression, and Origin Shield settings for Wedding Digital SaaS",
+  "requirements": ["7.2", "7.4", "7.7"],
+  "lastUpdated": "2025-07-14",
+  "mcp_note": "Cloudflare Bindings MCP does not support cache rules, compression rules, or tiered cache configuration directly. Use Terraform (terraform/cloudflare-cdn-cache.tf) or API script (scripts/configure-cdn-cache.sh) to apply these settings.",
+  "zone": {
+    "settings": {
+      "brotli": "on",
+      "early_hints": "on"
+    },
+    "tiered_cache": {
+      "type": "smart",
+      "description": "Smart Tiered Cache auto-selects closest upper-tier to origin"
+    }
+  },
+  "cache_rules": {
+    "phase": "http_request_cache_settings",
+    "rules": [
+      {
+        "description": "Cache immutable hashed assets for 1 year",
+        "requirement": "7.2",
+        "expression": "(http.request.uri.path matches \"^/_next/static/.*\") or (http.request.uri.path matches \".*\\\\.[0-9a-f]{8,}\\\\.(js|css|woff2|woff|ttf|eot|svg|png|jpg|webp)$\")",
+        "action": "set_cache_settings",
+        "action_parameters": {
+          "cache": true,
+          "edge_ttl": {
+            "mode": "override_origin",
+            "default": 31536000
+          },
+          "browser_ttl": {
+            "mode": "override_origin",
+            "default": 31536000
+          }
+        }
+      },
+      {
+        "description": "Cache HTML/dynamic content for 60 seconds",
+        "requirement": "7.2",
+        "expression": "(not http.request.uri.path matches \"^/_next/static/.*\") and (not http.request.uri.path matches \".*\\\\.[0-9a-f]{8,}\\\\.(js|css|woff2|woff|ttf|eot|svg|png|jpg|webp)$\") and (http.host ne \"api.{domain}\") and (http.host ne \"ws.{domain}\") and (not http.request.uri.path starts_with \"/api/\")",
+        "action": "set_cache_settings",
+        "action_parameters": {
+          "cache": true,
+          "edge_ttl": {
+            "mode": "override_origin",
+            "default": 60
+          },
+          "browser_ttl": {
+            "mode": "override_origin",
+            "default": 60
+          }
+        }
+      },
+      {
+        "description": "Bypass CDN cache for API responses",
+        "requirement": "7.2",
+        "expression": "(http.host eq \"api.{domain}\") or (http.request.uri.path starts_with \"/api/\")",
+        "action": "set_cache_settings",
+        "action_parameters": {
+          "cache": false
+        }
+      },
+      {
+        "description": "Bypass CDN cache for WebSocket connections",
+        "expression": "(http.host eq \"ws.{domain}\")",
+        "action": "set_cache_settings",
+        "action_parameters": {
+          "cache": false
+        }
+      }
+    ]
+  },
+  "cache_response_rules": {
+    "phase": "http_response_cache_settings",
+    "rules": [
+      {
+        "description": "Set immutable + max-age 1 year for hashed assets",
+        "requirement": "7.2",
+        "expression": "(http.request.uri.path matches \"^/_next/static/.*\") or (http.request.uri.path matches \".*\\\\.[0-9a-f]{8,}\\\\.(js|css|woff2|woff|ttf|eot|svg|png|jpg|webp)$\")",
+        "action": "set_cache_control",
+        "action_parameters": {
+          "max-age": {
+            "operation": "set",
+            "value": 31536000
+          },
+          "immutable": {
+            "operation": "set"
+          }
+        }
+      }
+    ]
+  },
+  "compression_rules": {
+    "phase": "http_response_compression",
+    "rules": [
+      {
+        "description": "Brotli with Gzip fallback for text-based assets",
+        "requirement": "7.4",
+        "expression": "(http.request.uri.path.extension in {\"html\" \"css\" \"js\" \"json\" \"xml\" \"svg\" \"txt\" \"map\" \"mjs\" \"webmanifest\"})",
+        "action": "compress_response",
+        "action_parameters": {
+          "algorithms": [{ "name": "brotli" }, { "name": "gzip" }, { "name": "auto" }]
+        }
+      }
+    ]
+  },
+  "worker": {
+    "name": "wedding-cdn-cache",
+    "description": "Optional Cloudflare Worker for edge-level cache header enforcement (defense-in-depth)",
+    "file": "workers/cdn-cache-worker.ts",
+    "wrangler_config": "workers/wrangler-cdn-cache.toml",
+    "note": "Worker is supplementary to zone-level cache rules. Deploy only if additional header control is needed."
+  }
+}

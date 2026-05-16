@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import { fetchInvitationData } from '@/lib/api';
 import { InvitationError } from '@/components/invitation-error';
 import { InvitationView } from './invitation-view';
@@ -12,6 +13,11 @@ interface PageProps {
  * Dynamic invitation page.
  * URL format: /{event-slug}?to={guest-slug}
  * Fetches event config and guest data from API, renders personalized invitation.
+ *
+ * Best practices applied:
+ * - Async params/searchParams (Next.js 15+ pattern)
+ * - generateMetadata for dynamic OG tags
+ * - notFound() to trigger not-found.tsx boundary
  */
 export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
   const { eventSlug } = await params;
@@ -56,9 +62,9 @@ export default async function InvitationPage({ params, searchParams }: PageProps
   // Fetch invitation data from API
   const data = await fetchInvitationData(eventSlug, guestSlug);
 
-  // If data not found, show appropriate error
+  // If data not found, trigger the not-found.tsx boundary
   if (!data) {
-    return <InvitationError type="event-not-found" />;
+    notFound();
   }
 
   return <InvitationView data={data} />;

@@ -10,15 +10,16 @@
 import { useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePWA } from '@/components/pwa-provider';
+import { useAuth } from '@/components/auth-provider';
 import { QRScanner } from '@/components/qr-scanner';
 import { VerificationResultDisplay } from '@/components/verification-result';
 import { verifyQRCode, type VerificationResult } from '@/lib/checkin-service';
 
 export default function ScannerPage() {
-  const { isOnline, apiBaseUrl, eventId } = usePWA();
+  const { isOnline, apiBaseUrl, authToken, eventId, resetEvent } = usePWA();
+  const { user, logout } = useAuth();
   const [isScanning, setIsScanning] = useState(true);
-  const [verificationResult, setVerificationResult] =
-    useState<VerificationResult | null>(null);
+  const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
   // Prevent duplicate scans of the same QR within a short window
@@ -29,10 +30,7 @@ export default function ScannerPage() {
     async (decodedText: string) => {
       // Debounce: ignore same QR scanned within 3 seconds
       const now = Date.now();
-      if (
-        decodedText === lastScannedRef.current &&
-        now - lastScanTimeRef.current < 3000
-      ) {
+      if (decodedText === lastScannedRef.current && now - lastScanTimeRef.current < 3000) {
         return;
       }
 
@@ -50,7 +48,7 @@ export default function ScannerPage() {
         const result = await verifyQRCode(decodedText, {
           isOnline,
           apiBaseUrl,
-          authToken: '', // In production, from auth context
+          authToken,
           eventId,
         });
 
@@ -64,7 +62,7 @@ export default function ScannerPage() {
         setIsVerifying(false);
       }
     },
-    [isOnline, apiBaseUrl, eventId, isVerifying]
+    [isOnline, apiBaseUrl, authToken, eventId, isVerifying]
   );
 
   const handleDismissResult = useCallback(() => {
@@ -77,11 +75,55 @@ export default function ScannerPage() {
   return (
     <main className="flex min-h-screen flex-col items-center px-4 py-6">
       {/* Header */}
-      <header className="mb-6 text-center">
-        <h1 className="text-xl font-bold text-gray-900">Wedding Scanner</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Verifikasi Kehadiran Tamu
-        </p>
+      <header className="mb-6 w-full max-w-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Wedding Scanner</h1>
+            <p className="mt-0.5 text-xs text-gray-500">{user?.name || 'Scanner Operator'}</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={resetEvent}
+              className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+              title="Ganti Event"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                />
+              </svg>
+            </button>
+            <button
+              onClick={logout}
+              className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+              title="Keluar"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
       </header>
 
       {/* QR Scanner */}
@@ -102,20 +144,11 @@ export default function ScannerPage() {
         <p className="text-xs text-gray-500">
           Mode:{' '}
           <span
-            className={
-              isOnline
-                ? 'font-medium text-emerald-600'
-                : 'font-medium text-amber-600'
-            }
+            className={isOnline ? 'font-medium text-emerald-600' : 'font-medium text-amber-600'}
           >
             {isOnline ? 'Online' : 'Offline — Verifikasi Lokal'}
           </span>
         </p>
-        {!eventId && (
-          <p className="mt-1 text-xs text-amber-600">
-            Event belum dipilih — pilih event untuk memulai
-          </p>
-        )}
       </div>
 
       {/* Manual check-in link */}
@@ -142,10 +175,7 @@ export default function ScannerPage() {
 
       {/* Verification result overlay */}
       {verificationResult && (
-        <VerificationResultDisplay
-          result={verificationResult}
-          onDismiss={handleDismissResult}
-        />
+        <VerificationResultDisplay result={verificationResult} onDismiss={handleDismissResult} />
       )}
     </main>
   );
