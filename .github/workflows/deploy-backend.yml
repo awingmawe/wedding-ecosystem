@@ -122,9 +122,10 @@ jobs:
       - name: Run database migrations
         id: migrate
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DIRECT_DATABASE_URL }}
         run: |
           echo "Running Prisma migrations..."
+          echo "⚠️  Using direct connection (not pooled) for migrations"
           cd packages/db
           npx prisma migrate deploy 2>&1 | tee migration-output.txt
           MIGRATION_EXIT_CODE=${PIPESTATUS[0]}
