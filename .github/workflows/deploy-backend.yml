@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
   HEALTH_CHECK_TIMEOUT: 180 # 3 minutes in seconds
   HEALTH_CHECK_INTERVAL: 10 # Check every 10 seconds
   ROLLBACK_TIMEOUT: 300 # 5 minutes max for rollback
@@ -45,6 +45,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Save node_modules cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Run backend tests
         run: |
@@ -86,7 +95,18 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Restore node_modules from cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies (fallback if cache miss)
+        if: steps.cache-restore.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Create migration backup point
