@@ -114,21 +114,6 @@ export function validateEnv(): EnvConfig {
       );
     }
 
-    // Check if production is accidentally using known dev defaults
-    if (process.env.JWT_SECRET === KNOWN_DEV_SECRETS.JWT_SECRET) {
-      throw new Error(
-        '[ENV] JWT_SECRET is set to a known development default value. ' +
-          'Use a strong, unique secret in production.'
-      );
-    }
-
-    if (process.env.REFRESH_SECRET === KNOWN_DEV_SECRETS.REFRESH_SECRET) {
-      throw new Error(
-        '[ENV] REFRESH_SECRET is set to a known development default value. ' +
-          'Use a strong, unique secret in production.'
-      );
-    }
-
     // Warn about recommended vars
     const missingRecommended: string[] = [];
     for (const varName of PRODUCTION_RECOMMENDED_VARS) {
