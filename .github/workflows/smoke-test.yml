@@ -29,7 +29,7 @@ on:
         default: ''
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
   SMOKE_TEST_TIMEOUT: 30
   RETRY_COUNT: 3
   RETRY_DELAY: 5

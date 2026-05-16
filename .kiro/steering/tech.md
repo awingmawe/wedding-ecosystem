@@ -18,7 +18,7 @@ inclusion: always
 
 ## Backend
 
-- **Runtime**: Node.js 20+
+- **Runtime**: Node.js 22+
 - **API Framework**: Fastify 5.8
 - **Database**: PostgreSQL
 - **ORM**: Prisma 7.7

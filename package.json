@@ -16,7 +16,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "scan-secrets": "bash scripts/detect-secrets.sh",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
@@ -32,7 +32,7 @@
     "typescript-eslint": "8.59.3"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "packageManager": "npm@11.0.0"
 }
