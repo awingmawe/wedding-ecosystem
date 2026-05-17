@@ -113,10 +113,7 @@ const RATE_LIMIT_KEY_PREFIX = 'rate_limit:';
  *
  * Validates: Requirements 13.3, 13.4
  */
-export function createRateLimiterMiddleware(
-  store: RateLimiterStore,
-  config?: RateLimiterConfig
-) {
+export function createRateLimiterMiddleware(store: RateLimiterStore, config?: RateLimiterConfig) {
   const maxRequests = config?.maxRequests ?? DEFAULT_MAX_REQUESTS;
   const windowSeconds = config?.windowSeconds ?? DEFAULT_WINDOW_SECONDS;
 
@@ -125,10 +122,10 @@ export function createRateLimiterMiddleware(
     reply: FastifyReply
   ): Promise<void> {
     const authenticatedRequest = request as AuthenticatedRequest;
-    const tenantContext = authenticatedRequest.tenantContext;
+    const user = authenticatedRequest.user;
 
-    // If no tenant context (unauthenticated routes), use IP-based limiting
-    const identifier = tenantContext?.tenant_id ?? request.ip;
+    // If no user context (unauthenticated routes), use IP-based limiting
+    const identifier = user?.tenant_id ?? request.ip;
     const key = `${RATE_LIMIT_KEY_PREFIX}${identifier}`;
 
     const currentCount = await store.increment(key, windowSeconds);

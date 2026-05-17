@@ -73,11 +73,9 @@ const slugSchema = z
     message: 'Slug hanya boleh berisi huruf kecil, angka, dan tanda hubung',
   });
 
-const hexColorSchema = z
-  .string()
-  .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, {
-    message: 'Format warna harus hex valid (contoh: #RRGGBB atau #RGB)',
-  });
+const hexColorSchema = z.string().regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/, {
+  message: 'Format warna harus hex valid (contoh: #RRGGBB atau #RGB)',
+});
 
 const urlSchema = z
   .string()
@@ -193,17 +191,22 @@ export const qrCheckInSchema = z.object({
     .string()
     .min(1, { message: 'QR payload tidak boleh kosong' })
     .max(MAX_TEXT_LENGTH, { message: `QR payload maksimal ${MAX_TEXT_LENGTH} karakter` }),
+  event_id: z.string().uuid({ message: 'ID event tidak valid' }),
+  scanner_device_id: z.string().uuid({ message: 'ID device tidak valid' }).optional(),
 });
 
 /** Manual check-in input */
 export const manualCheckInSchema = z.object({
   guest_id: z.string().uuid({ message: 'ID tamu tidak valid' }),
+  event_id: z.string().uuid({ message: 'ID event tidak valid' }),
+  scanner_device_id: z.string().uuid({ message: 'ID device tidak valid' }).optional(),
 });
 
 /** Go-Show guest registration input (Req 8.5) */
 export const goShowSchema = z.object({
   name: nameSchema,
   event_id: z.string().uuid({ message: 'ID event tidak valid' }),
+  scanner_device_id: z.string().uuid({ message: 'ID device tidak valid' }).optional(),
 });
 
 /** Guest search input (Req 8.1) */
@@ -278,12 +281,7 @@ export const updateInvitationThemeSchema = z.object({
 
 /** Pagination input */
 export const paginationSchema = z.object({
-  page: z
-    .number()
-    .int()
-    .min(1, { message: 'Halaman minimal 1' })
-    .optional()
-    .default(1),
+  page: z.number().int().min(1, { message: 'Halaman minimal 1' }).optional().default(1),
   per_page: z
     .number()
     .int()

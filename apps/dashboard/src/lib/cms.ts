@@ -82,8 +82,7 @@ export function validateMediaFile(
 ): MediaValidationError | null {
   const allowedFormats = mediaType === 'image' ? ALLOWED_IMAGE_FORMATS : ALLOWED_VIDEO_FORMATS;
   const maxSize = mediaType === 'image' ? MAX_IMAGE_SIZE : MAX_VIDEO_SIZE;
-  const formatNames =
-    mediaType === 'image' ? 'JPEG, PNG, atau WebP' : 'MP4';
+  const formatNames = mediaType === 'image' ? 'JPEG, PNG, atau WebP' : 'MP4';
   const maxSizeLabel = mediaType === 'image' ? '5MB' : '50MB';
 
   if (!allowedFormats.includes(file.type)) {
@@ -106,7 +105,8 @@ export function validateMediaFile(
 // --- API Functions ---
 
 export async function fetchSections(eventId: string): Promise<InvitationSection[]> {
-  return apiFetch<InvitationSection[]>(`/events/${eventId}/sections`);
+  const response = await apiFetch<{ data: InvitationSection[] }>(`/cms/sections/${eventId}`);
+  return response.data;
 }
 
 export async function updateSectionContent(
@@ -114,7 +114,7 @@ export async function updateSectionContent(
   sectionId: string,
   content: Record<string, unknown>
 ): Promise<InvitationSection> {
-  return apiFetch<InvitationSection>(`/events/${eventId}/sections/${sectionId}/content`, {
+  return apiFetch<InvitationSection>(`/cms/sections/${eventId}/${sectionId}/content`, {
     method: 'PUT',
     body: { content },
   });
@@ -125,7 +125,7 @@ export async function toggleSectionActive(
   sectionId: string,
   isActive: boolean
 ): Promise<InvitationSection> {
-  return apiFetch<InvitationSection>(`/events/${eventId}/sections/${sectionId}/toggle`, {
+  return apiFetch<InvitationSection>(`/cms/sections/${eventId}/${sectionId}/toggle`, {
     method: 'PUT',
     body: { is_active: isActive },
   });
@@ -136,16 +136,13 @@ export async function reorderSection(
   sectionId: string,
   newPosition: number
 ): Promise<InvitationSection> {
-  return apiFetch<InvitationSection>(`/events/${eventId}/sections/${sectionId}/reorder`, {
+  return apiFetch<InvitationSection>(`/cms/sections/${eventId}/${sectionId}/reorder`, {
     method: 'PUT',
     body: { position: newPosition },
   });
 }
 
-export async function uploadMedia(
-  eventId: string,
-  file: File
-): Promise<{ url: string }> {
+export async function uploadMedia(eventId: string, file: File): Promise<{ url: string }> {
   const formData = new FormData();
   formData.append('file', file);
 

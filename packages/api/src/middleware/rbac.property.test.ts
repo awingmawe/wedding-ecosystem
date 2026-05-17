@@ -15,12 +15,7 @@ import { AuthenticatedRequest } from './tenant-isolation.middleware';
 // --- Arbitraries ---
 
 /** Generates a random UserRole */
-const arbUserRole = fc.constantFrom(
-  UserRole.ADMIN,
-  UserRole.CLIENT,
-  UserRole.WO,
-  UserRole.SCANNER
-);
+const arbUserRole = fc.constantFrom(UserRole.ADMIN, UserRole.CLIENT, UserRole.WO, UserRole.SCANNER);
 
 /** Generates a random non-empty subset of UserRole values for permission configs */
 const arbAllowedRoles = fc
@@ -38,11 +33,14 @@ const arbRequestMetadata = fc.record({
 
 // --- Test Helpers ---
 
-function createAuthenticatedRequest(role: UserRole, metadata?: { userId?: string; tenantId?: string; email?: string }): AuthenticatedRequest {
+function createAuthenticatedRequest(
+  role: UserRole,
+  metadata?: { userId?: string; tenantId?: string; email?: string }
+): AuthenticatedRequest {
   const request = {
     headers: { authorization: 'Bearer some-token' },
-    tenantContext: {
-      user_id: metadata?.userId ?? 'user-123',
+    user: {
+      id: metadata?.userId ?? 'user-123',
       tenant_id: metadata?.tenantId ?? 'tenant-abc',
       role: role,
       email: metadata?.email ?? 'user@example.com',
@@ -86,10 +84,7 @@ describe('Property 3: Role-Based Data Access', () => {
       'EVENT_MANAGEMENT',
       'ALL_ROLES',
     ];
-    const deniedPermissions: (keyof typeof PERMISSIONS)[] = [
-      'SCANNER_ACCESS',
-      'ADMIN_ONLY',
-    ];
+    const deniedPermissions: (keyof typeof PERMISSIONS)[] = ['SCANNER_ACCESS', 'ADMIN_ONLY'];
 
     fc.assert(
       fc.property(arbRequestMetadata, (metadata) => {
@@ -159,10 +154,7 @@ describe('Property 3: Role-Based Data Access', () => {
       'CHECKIN_ACCESS',
       'ALL_ROLES',
     ];
-    const deniedPermissions: (keyof typeof PERMISSIONS)[] = [
-      'EVENT_MANAGEMENT',
-      'ADMIN_ONLY',
-    ];
+    const deniedPermissions: (keyof typeof PERMISSIONS)[] = ['EVENT_MANAGEMENT', 'ADMIN_ONLY'];
 
     fc.assert(
       fc.property(arbRequestMetadata, (metadata) => {
@@ -276,34 +268,29 @@ describe('Property 3: Role-Based Data Access', () => {
    */
   it('Denied access never reveals resource existence', () => {
     fc.assert(
-      fc.property(
-        arbUserRole,
-        arbAllowedRoles,
-        arbRequestMetadata,
-        (role, config, metadata) => {
-          // Only test when access is denied
-          fc.pre(!config.allowedRoles.includes(role));
+      fc.property(arbUserRole, arbAllowedRoles, arbRequestMetadata, (role, config, metadata) => {
+        // Only test when access is denied
+        fc.pre(!config.allowedRoles.includes(role));
 
-          const request = createAuthenticatedRequest(role, metadata);
-          const reply = createMockReply();
-          const middleware = createRBACMiddleware(config);
-          middleware(request, reply);
+        const request = createAuthenticatedRequest(role, metadata);
+        const reply = createMockReply();
+        const middleware = createRBACMiddleware(config);
+        middleware(request, reply);
 
-          expect(reply.statusCode).toBe(403);
+        expect(reply.statusCode).toBe(403);
 
-          const body = reply.body as { error: { message: string; code: string } };
-          // Message must be generic
-          expect(body.error.message).toBe('Akses ditolak.');
-          // Must not contain resource-specific information
-          expect(body.error.message).not.toContain('not found');
-          expect(body.error.message).not.toContain('does not exist');
-          expect(body.error.message).not.toContain('tenant');
-          expect(body.error.message).not.toContain('event');
-          expect(body.error.message).not.toContain('guest');
-          // Error code should be ROLE_INSUFFICIENT
-          expect(body.error.code).toBe(ErrorCode.ROLE_INSUFFICIENT);
-        }
-      ),
+        const body = reply.body as { error: { message: string; code: string } };
+        // Message must be generic
+        expect(body.error.message).toBe('Akses ditolak.');
+        // Must not contain resource-specific information
+        expect(body.error.message).not.toContain('not found');
+        expect(body.error.message).not.toContain('does not exist');
+        expect(body.error.message).not.toContain('tenant');
+        expect(body.error.message).not.toContain('event');
+        expect(body.error.message).not.toContain('guest');
+        // Error code should be ROLE_INSUFFICIENT
+        expect(body.error.code).toBe(ErrorCode.ROLE_INSUFFICIENT);
+      }),
       { numRuns: 200 }
     );
   });

@@ -21,7 +21,7 @@ export interface RBACConfig {
 /**
  * Predefined permission sets for common access patterns.
  * Based on the RBAC matrix from the design document:
- * 
+ *
  * | Role             | Dashboard      | CMS            | Scanner                          | Guest Data       |
  * |------------------|----------------|----------------|----------------------------------|------------------|
  * | Admin            | Scoped Access  | Scoped Access  | Scoped Access                    | Scoped per assign|
@@ -81,21 +81,18 @@ export const PERMISSIONS = {
 /**
  * Creates a Fastify preHandler hook that enforces role-based access control.
  * Must be used AFTER the tenant isolation middleware (which sets tenantContext).
- * 
+ *
  * Returns 403 Forbidden without revealing resource existence for unauthorized access (Req 1.3).
- * 
+ *
  * @param config - RBAC configuration specifying allowed roles
  */
 export function createRBACMiddleware(config: RBACConfig) {
-  return async function rbacHook(
-    request: FastifyRequest,
-    reply: FastifyReply
-  ): Promise<void> {
+  return async function rbacHook(request: FastifyRequest, reply: FastifyReply): Promise<void> {
     const authenticatedRequest = request as AuthenticatedRequest;
-    const tenantContext = authenticatedRequest.tenantContext;
+    const user = authenticatedRequest.user;
 
-    // Ensure tenant context exists (middleware ordering check)
-    if (!tenantContext) {
+    // Ensure user context exists (middleware ordering check)
+    if (!user) {
       reply.status(403).send({
         success: false,
         error: {
@@ -106,7 +103,7 @@ export function createRBACMiddleware(config: RBACConfig) {
       return;
     }
 
-    const userRole = tenantContext.role as UserRole;
+    const userRole = user.role as UserRole;
 
     // Check if user's role is in the allowed roles list
     if (!config.allowedRoles.includes(userRole)) {
@@ -130,9 +127,9 @@ export function createRBACMiddleware(config: RBACConfig) {
  * Useful for inline role checks within route handlers.
  */
 export function hasRole(request: FastifyRequest, role: UserRole): boolean {
-  const ctx = (request as AuthenticatedRequest).tenantContext;
-  if (!ctx) return false;
-  return ctx.role === role;
+  const user = (request as AuthenticatedRequest).user;
+  if (!user) return false;
+  return user.role === role;
 }
 
 /**
@@ -140,9 +137,9 @@ export function hasRole(request: FastifyRequest, role: UserRole): boolean {
  * Useful for conditional logic within route handlers.
  */
 export function hasAnyRole(request: FastifyRequest, roles: UserRole[]): boolean {
-  const ctx = (request as AuthenticatedRequest).tenantContext;
-  if (!ctx) return false;
-  return roles.includes(ctx.role as UserRole);
+  const user = (request as AuthenticatedRequest).user;
+  if (!user) return false;
+  return roles.includes(user.role as UserRole);
 }
 
 /**
@@ -150,7 +147,7 @@ export function hasAnyRole(request: FastifyRequest, roles: UserRole[]): boolean 
  * Returns null if tenant context is not available.
  */
 export function getUserRole(request: FastifyRequest): UserRole | null {
-  const ctx = (request as AuthenticatedRequest).tenantContext;
-  if (!ctx) return null;
-  return ctx.role as UserRole;
+  const user = (request as AuthenticatedRequest).user;
+  if (!user) return null;
+  return user.role as UserRole;
 }

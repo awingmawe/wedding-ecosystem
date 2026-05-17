@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import { ScannerLane } from '@wedding/shared';
+import { getTenantEvent, replyEventNotFound } from '../repositories';
 
 interface ScannerRouteOptions extends FastifyPluginOptions {
   prisma: PrismaClient;
@@ -31,16 +32,8 @@ export async function scannerRoutes(app: FastifyInstance, opts: ScannerRouteOpti
     }
 
     // Verify event belongs to tenant
-    const event = await prisma.event.findFirst({
-      where: { id: event_id, tenant_id: user.tenant_id },
-    });
-
-    if (!event) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
-      });
-    }
+    const event = await getTenantEvent(prisma, event_id, user.tenant_id);
+    if (!event) return replyEventNotFound(reply);
 
     // Check active device count (max 2 per event)
     const activeDevices = await prisma.scannerDevice.count({
@@ -64,7 +57,8 @@ export async function scannerRoutes(app: FastifyInstance, opts: ScannerRouteOpti
         id: randomUUID(),
         event_id,
         device_name,
-        lane: (lane as ScannerLane) || (activeDevices === 0 ? ScannerLane.LANE_1 : ScannerLane.LANE_2),
+        lane:
+          (lane as ScannerLane) || (activeDevices === 0 ? ScannerLane.LANE_1 : ScannerLane.LANE_2),
         is_active: true,
         last_active_at: new Date(),
       },
@@ -128,16 +122,8 @@ export async function scannerRoutes(app: FastifyInstance, opts: ScannerRouteOpti
     const user = request.user!;
     const { eventId } = request.params as { eventId: string };
 
-    const event = await prisma.event.findFirst({
-      where: { id: eventId, tenant_id: user.tenant_id },
-    });
-
-    if (!event) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
-      });
-    }
+    const event = await getTenantEvent(prisma, eventId, user.tenant_id);
+    if (!event) return replyEventNotFound(reply);
 
     const devices = await prisma.scannerDevice.findMany({
       where: { event_id: eventId, is_active: true },
@@ -152,16 +138,8 @@ export async function scannerRoutes(app: FastifyInstance, opts: ScannerRouteOpti
     const user = request.user!;
     const { eventId } = request.params as { eventId: string };
 
-    const event = await prisma.event.findFirst({
-      where: { id: eventId, tenant_id: user.tenant_id },
-    });
-
-    if (!event) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
-      });
-    }
+    const event = await getTenantEvent(prisma, eventId, user.tenant_id);
+    if (!event) return replyEventNotFound(reply);
 
     // Return guest data for offline cache (name, QR payload, check-in status)
     const guests = await prisma.guest.findMany({

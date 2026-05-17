@@ -63,7 +63,6 @@ export const DEFAULT_CACHE_ROUTES: CacheRoute[] = [
   // Event details — TTL 5 minutes
   { pattern: '/events/current', ttlSeconds: 300 },
   { pattern: '/events/:id/stats', ttlSeconds: 300 },
-  { pattern: '/events/:id/sections', ttlSeconds: 300 },
   // CMS sections — TTL 5 minutes
   { pattern: '/cms/sections/:eventId', ttlSeconds: 300 },
   { pattern: '/cms/sections/:eventId/:sectionId', ttlSeconds: 300 },
@@ -73,22 +72,6 @@ export const DEFAULT_CACHE_ROUTES: CacheRoute[] = [
 ];
 
 export const DEFAULT_INVALIDATION_RULES: InvalidationRule[] = [
-  // Event write operations invalidate event cache
-  {
-    triggerPattern: '/events/:id/sections/:sectionId/content',
-    methods: ['PUT'],
-    invalidatePatterns: ['events:', 'cms:'],
-  },
-  {
-    triggerPattern: '/events/:id/sections/:sectionId/toggle',
-    methods: ['PUT'],
-    invalidatePatterns: ['events:', 'cms:'],
-  },
-  {
-    triggerPattern: '/events/:id/sections/:sectionId/reorder',
-    methods: ['PUT'],
-    invalidatePatterns: ['events:', 'cms:'],
-  },
   // CMS write operations invalidate CMS and event cache
   {
     triggerPattern: '/cms/sections/:eventId/:sectionId/content',

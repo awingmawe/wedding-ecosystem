@@ -1,15 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
+import jwt from 'jsonwebtoken';
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { ErrorCode } from '@wedding/shared';
 import {
+  createAuthMiddleware,
   createTenantIsolationMiddleware,
   tenantFilter,
   validateTenantOwnership,
   AuthenticatedRequest,
 } from './tenant-isolation.middleware';
-import { AuthService, TokenPayload, AuthServiceError } from '../services/auth.service';
 
 // --- Test Helpers ---
+
+const TEST_JWT_SECRET = 'test-secret-key-for-unit-tests';
 
 function createMockRequest(authHeader?: string): FastifyRequest {
   return {
@@ -35,118 +38,110 @@ function createMockReply() {
   return reply as unknown as FastifyReply & { statusCode: number; body: unknown };
 }
 
-function createMockAuthService(
-  verifyResult: TokenPayload | AuthServiceError
-): AuthService {
-  return {
-    verifyAccessToken: vi.fn().mockReturnValue(verifyResult),
-  } as unknown as AuthService;
+function createValidToken(payload: object): string {
+  return jwt.sign(payload, TEST_JWT_SECRET, { expiresIn: '15m' });
+}
+
+function createExpiredToken(payload: object): string {
+  return jwt.sign(payload, TEST_JWT_SECRET, { expiresIn: '-1s' });
 }
 
 // --- Tests ---
 
 describe('Tenant Isolation Middleware', () => {
-  const validPayload: TokenPayload = {
+  const validPayload = {
     sub: 'user-123',
     tenant_id: 'tenant-abc',
     role: 'client',
     email: 'user@example.com',
   };
 
-  describe('createTenantIsolationMiddleware', () => {
+  describe('createAuthMiddleware', () => {
     it('should reject requests without Authorization header', async () => {
-      const authService = createMockAuthService(validPayload);
-      const middleware = createTenantIsolationMiddleware(authService);
+      const middleware = createAuthMiddleware(TEST_JWT_SECRET);
       const request = createMockRequest(undefined);
       const reply = createMockReply();
 
       await middleware(request, reply);
 
       expect(reply.statusCode).toBe(401);
-      expect((reply.body as { error: { code: string } }).error.code).toBe(
-        ErrorCode.TOKEN_EXPIRED
-      );
+      expect((reply.body as { error: { code: string } }).error.code).toBe('AUTH_2002');
     });
 
     it('should reject requests with non-Bearer Authorization header', async () => {
-      const authService = createMockAuthService(validPayload);
-      const middleware = createTenantIsolationMiddleware(authService);
+      const middleware = createAuthMiddleware(TEST_JWT_SECRET);
       const request = createMockRequest('Basic abc123');
       const reply = createMockReply();
 
       await middleware(request, reply);
 
       expect(reply.statusCode).toBe(401);
+      expect((reply.body as { error: { code: string } }).error.code).toBe('AUTH_2002');
     });
 
-    it('should reject requests with empty Bearer token', async () => {
-      const authService = createMockAuthService(validPayload);
-      const middleware = createTenantIsolationMiddleware(authService);
-      const request = createMockRequest('Bearer ');
-      const reply = createMockReply();
-
-      // Empty token will fail verification
-      const errorResult: AuthServiceError = {
-        code: ErrorCode.TOKEN_EXPIRED,
-        message: 'Token tidak valid.',
-      };
-      const authServiceWithError = createMockAuthService(errorResult);
-      const middlewareWithError = createTenantIsolationMiddleware(authServiceWithError);
-
-      await middlewareWithError(request, reply);
-
-      expect(reply.statusCode).toBe(401);
-    });
-
-    it('should reject requests with invalid/expired token', async () => {
-      const errorResult: AuthServiceError = {
-        code: ErrorCode.TOKEN_EXPIRED,
-        message: 'Access token telah kedaluwarsa.',
-      };
-      const authService = createMockAuthService(errorResult);
-      const middleware = createTenantIsolationMiddleware(authService);
-      const request = createMockRequest('Bearer expired-token');
+    it('should reject requests with expired token', async () => {
+      const middleware = createAuthMiddleware(TEST_JWT_SECRET);
+      const token = createExpiredToken(validPayload);
+      const request = createMockRequest(`Bearer ${token}`);
       const reply = createMockReply();
 
       await middleware(request, reply);
 
       expect(reply.statusCode).toBe(401);
-      expect((reply.body as { error: { code: string } }).error.code).toBe(
-        ErrorCode.TOKEN_EXPIRED
-      );
+      expect((reply.body as { error: { code: string } }).error.code).toBe('AUTH_2002');
+    });
+
+    it('should reject requests with invalid token signature', async () => {
+      const middleware = createAuthMiddleware(TEST_JWT_SECRET);
+      const token = jwt.sign(validPayload, 'wrong-secret');
+      const request = createMockRequest(`Bearer ${token}`);
+      const reply = createMockReply();
+
+      await middleware(request, reply);
+
+      expect(reply.statusCode).toBe(401);
+      expect((reply.body as { error: { code: string } }).error.code).toBe('AUTH_2003');
+    });
+
+    it('should reject requests with malformed token', async () => {
+      const middleware = createAuthMiddleware(TEST_JWT_SECRET);
+      const request = createMockRequest('Bearer not-a-valid-jwt');
+      const reply = createMockReply();
+
+      await middleware(request, reply);
+
+      expect(reply.statusCode).toBe(401);
+      expect((reply.body as { error: { code: string } }).error.code).toBe('AUTH_2003');
     });
 
     it('should reject requests where token has no tenant_id', async () => {
-      const payloadWithoutTenant: TokenPayload = {
+      const middleware = createAuthMiddleware(TEST_JWT_SECRET);
+      const token = createValidToken({
         sub: 'user-123',
-        tenant_id: '', // empty tenant_id
+        tenant_id: '',
         role: 'client',
-        email: 'user@example.com',
-      };
-      const authService = createMockAuthService(payloadWithoutTenant);
-      const middleware = createTenantIsolationMiddleware(authService);
-      const request = createMockRequest('Bearer valid-token');
+        email: 'a@b.com',
+      });
+      const request = createMockRequest(`Bearer ${token}`);
       const reply = createMockReply();
 
       await middleware(request, reply);
 
       expect(reply.statusCode).toBe(403);
-      expect((reply.body as { error: { code: string } }).error.code).toBe(
-        ErrorCode.INVALID_TENANT
-      );
+      expect((reply.body as { error: { code: string } }).error.code).toBe(ErrorCode.INVALID_TENANT);
     });
 
-    it('should attach tenant context for valid token with tenant_id', async () => {
-      const authService = createMockAuthService(validPayload);
-      const middleware = createTenantIsolationMiddleware(authService);
-      const request = createMockRequest('Bearer valid-token');
+    it('should attach user context for valid token with tenant_id', async () => {
+      const middleware = createAuthMiddleware(TEST_JWT_SECRET);
+      const token = createValidToken(validPayload);
+      const request = createMockRequest(`Bearer ${token}`);
       const reply = createMockReply();
 
       await middleware(request, reply);
 
       const authenticatedRequest = request as AuthenticatedRequest;
-      expect(authenticatedRequest.tenantContext).toEqual({
-        user_id: 'user-123',
+      expect(authenticatedRequest.user).toEqual({
+        id: 'user-123',
         tenant_id: 'tenant-abc',
         role: 'client',
         email: 'user@example.com',
@@ -155,23 +150,38 @@ describe('Tenant Isolation Middleware', () => {
       expect(reply.statusCode).toBe(0);
     });
 
-    it('should extract token correctly from Bearer prefix', async () => {
-      const authService = createMockAuthService(validPayload);
-      const middleware = createTenantIsolationMiddleware(authService);
-      const request = createMockRequest('Bearer my-jwt-token-here');
+    it('should correctly extract token from Bearer prefix', async () => {
+      const middleware = createAuthMiddleware(TEST_JWT_SECRET);
+      const token = createValidToken(validPayload);
+      const request = createMockRequest(`Bearer ${token}`);
       const reply = createMockReply();
 
       await middleware(request, reply);
 
-      expect(authService.verifyAccessToken).toHaveBeenCalledWith('my-jwt-token-here');
+      // Verify user was attached (proves token was correctly extracted and verified)
+      expect((request as any).user).toBeDefined();
+      expect((request as any).user.id).toBe('user-123');
+    });
+  });
+
+  describe('createTenantIsolationMiddleware (legacy alias)', () => {
+    it('should work as alias for createAuthMiddleware', async () => {
+      const middleware = createTenantIsolationMiddleware({ jwtSecret: TEST_JWT_SECRET });
+      const token = createValidToken(validPayload);
+      const request = createMockRequest(`Bearer ${token}`);
+      const reply = createMockReply();
+
+      await middleware(request, reply);
+
+      expect((request as any).user.tenant_id).toBe('tenant-abc');
     });
   });
 
   describe('tenantFilter', () => {
     it('should return tenant_id filter from authenticated request', () => {
-      const request = createMockRequest('Bearer token') as AuthenticatedRequest;
-      request.tenantContext = {
-        user_id: 'user-1',
+      const request = createMockRequest('Bearer token') as any;
+      request.user = {
+        id: 'user-1',
         tenant_id: 'tenant-xyz',
         role: 'client',
         email: 'test@test.com',
@@ -182,20 +192,18 @@ describe('Tenant Isolation Middleware', () => {
       expect(filter).toEqual({ tenant_id: 'tenant-xyz' });
     });
 
-    it('should throw error when tenant context is not available', () => {
+    it('should throw error when user context is not available', () => {
       const request = createMockRequest('Bearer token');
 
-      expect(() => tenantFilter(request)).toThrow(
-        'Tenant context not available'
-      );
+      expect(() => tenantFilter(request)).toThrow('Tenant context not available');
     });
   });
 
   describe('validateTenantOwnership', () => {
     it('should return true when resource belongs to same tenant', () => {
-      const request = createMockRequest('Bearer token') as AuthenticatedRequest;
-      request.tenantContext = {
-        user_id: 'user-1',
+      const request = createMockRequest('Bearer token') as any;
+      request.user = {
+        id: 'user-1',
         tenant_id: 'tenant-abc',
         role: 'client',
         email: 'test@test.com',
@@ -205,9 +213,9 @@ describe('Tenant Isolation Middleware', () => {
     });
 
     it('should return false when resource belongs to different tenant', () => {
-      const request = createMockRequest('Bearer token') as AuthenticatedRequest;
-      request.tenantContext = {
-        user_id: 'user-1',
+      const request = createMockRequest('Bearer token') as any;
+      request.user = {
+        id: 'user-1',
         tenant_id: 'tenant-abc',
         role: 'client',
         email: 'test@test.com',
@@ -216,7 +224,7 @@ describe('Tenant Isolation Middleware', () => {
       expect(validateTenantOwnership(request, 'tenant-xyz')).toBe(false);
     });
 
-    it('should return false when tenant context is not available', () => {
+    it('should return false when user context is not available', () => {
       const request = createMockRequest('Bearer token');
 
       expect(validateTenantOwnership(request, 'tenant-abc')).toBe(false);

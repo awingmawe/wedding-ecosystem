@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest } from 'fastify';
 import { PrismaClient } from '@prisma/client';
+import { getTenantEvent, replyEventNotFound, replySectionNotFound } from '../repositories';
 
 interface CMSRouteOptions extends FastifyPluginOptions {
   prisma: PrismaClient;
@@ -19,16 +20,8 @@ export async function cmsRoutes(app: FastifyInstance, opts: CMSRouteOptions) {
     const { eventId } = request.params as { eventId: string };
 
     // Verify event belongs to tenant
-    const event = await prisma.event.findFirst({
-      where: { id: eventId, tenant_id: user.tenant_id },
-    });
-
-    if (!event) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
-      });
-    }
+    const event = await getTenantEvent(prisma, eventId, user.tenant_id);
+    if (!event) return replyEventNotFound(reply);
 
     const sections = await prisma.invitationSection.findMany({
       where: { event_id: eventId },
@@ -43,16 +36,8 @@ export async function cmsRoutes(app: FastifyInstance, opts: CMSRouteOptions) {
     const user = request.user!;
     const { eventId, sectionId } = request.params as { eventId: string; sectionId: string };
 
-    const event = await prisma.event.findFirst({
-      where: { id: eventId, tenant_id: user.tenant_id },
-    });
-
-    if (!event) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
-      });
-    }
+    const event = await getTenantEvent(prisma, eventId, user.tenant_id);
+    if (!event) return replyEventNotFound(reply);
 
     const section = await prisma.invitationSection.findFirst({
       where: { id: sectionId, event_id: eventId },
@@ -74,16 +59,8 @@ export async function cmsRoutes(app: FastifyInstance, opts: CMSRouteOptions) {
     const { eventId, sectionId } = request.params as { eventId: string; sectionId: string };
     const { content } = request.body as { content: Record<string, unknown> };
 
-    const event = await prisma.event.findFirst({
-      where: { id: eventId, tenant_id: user.tenant_id },
-    });
-
-    if (!event) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
-      });
-    }
+    const event = await getTenantEvent(prisma, eventId, user.tenant_id);
+    if (!event) return replyEventNotFound(reply);
 
     const section = await prisma.invitationSection.findFirst({
       where: { id: sectionId, event_id: eventId },
@@ -110,16 +87,8 @@ export async function cmsRoutes(app: FastifyInstance, opts: CMSRouteOptions) {
     const { eventId, sectionId } = request.params as { eventId: string; sectionId: string };
     const { is_active } = request.body as { is_active: boolean };
 
-    const event = await prisma.event.findFirst({
-      where: { id: eventId, tenant_id: user.tenant_id },
-    });
-
-    if (!event) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
-      });
-    }
+    const event = await getTenantEvent(prisma, eventId, user.tenant_id);
+    if (!event) return replyEventNotFound(reply);
 
     const section = await prisma.invitationSection.findFirst({
       where: { id: sectionId, event_id: eventId },
@@ -161,16 +130,8 @@ export async function cmsRoutes(app: FastifyInstance, opts: CMSRouteOptions) {
     const { eventId, sectionId } = request.params as { eventId: string; sectionId: string };
     const { position } = request.body as { position: number };
 
-    const event = await prisma.event.findFirst({
-      where: { id: eventId, tenant_id: user.tenant_id },
-    });
-
-    if (!event) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
-      });
-    }
+    const event = await getTenantEvent(prisma, eventId, user.tenant_id);
+    if (!event) return replyEventNotFound(reply);
 
     const allSections = await prisma.invitationSection.findMany({
       where: { event_id: eventId },
@@ -217,16 +178,8 @@ export async function cmsRoutes(app: FastifyInstance, opts: CMSRouteOptions) {
     const user = request.user!;
     const { eventId } = request.params as { eventId: string };
 
-    const event = await prisma.event.findFirst({
-      where: { id: eventId, tenant_id: user.tenant_id },
-    });
-
-    if (!event) {
-      return reply.status(404).send({
-        success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
-      });
-    }
+    const event = await getTenantEvent(prisma, eventId, user.tenant_id);
+    if (!event) return replyEventNotFound(reply);
 
     // TODO: Implement real file upload via StorageService (presigned URL flow)
     // For now, return a proper error in production or a placeholder in development
