@@ -43,8 +43,9 @@ graph TB
         Config["config/<br/>(DB, Redis, logger, production, encryption, secret-rotation)"]
         MW["middleware/<br/>(CORS, rate-limit, RBAC, tenant-isolation, encryption, input-validation, media-upload)"]
         Plugins["plugins/<br/>(audit-logger, response-cache, security-headers, rate-limiter, CORS, request-validation)"]
-        Routes["routes/<br/>(auth, guests, events, checkin, rsvp, cms, scanner, messages, notifications, invitations, health)"]
-        Services["services/<br/>(Business logic layer)"]
+        Routes["routes/<br/>(thin HTTP adapters — no Prisma, no business logic)"]
+        Services["services/<br/>(Business logic: slug generation, QR, PII, deduplication)"]
+        Repos["repositories/<br/>(Prisma adapters — all queries scoped by tenant_id)"]
     end
 
     Index --> Config
@@ -52,6 +53,7 @@ graph TB
     Index --> Plugins
     Index --> Routes
     Routes --> Services
+    Services --> Repos
 ```
 
 #### Services
@@ -68,7 +70,7 @@ graph TB
 | `ScannerDeviceService` | `scanner-device.service.ts` | Device registration, lane assignment, heartbeat, max 2 per event |
 | `MediaUploadService` | `media-upload.service.ts` | File validation, virus scanning, cloud storage upload |
 | `StorageService` | `storage.ts` | R2 client, signed URLs, tenant quota management |
-| `GuestImportService` | `guest-import.service.ts` | CSV parsing, bulk import (max 2000 rows) |
+| `GuestImportService` | `guest-import.service.ts` | CSV parsing, bulk import (max 2000 rows), cross-batch deduplication by name within event |
 
 #### Middleware Stack
 

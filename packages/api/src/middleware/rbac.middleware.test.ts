@@ -15,8 +15,8 @@ import { AuthenticatedRequest, TenantContext } from './tenant-isolation.middlewa
 function createAuthenticatedRequest(role: UserRole): AuthenticatedRequest {
   const request = {
     headers: {},
-    tenantContext: {
-      user_id: 'user-123',
+    user: {
+      id: 'user-123',
       tenant_id: 'tenant-abc',
       role: role,
       email: 'user@example.com',
@@ -105,9 +105,7 @@ describe('RBAC Middleware', () => {
       await middleware(request, reply);
 
       expect(reply.statusCode).toBe(403);
-      expect((reply.body as { error: { code: string } }).error.code).toBe(
-        ErrorCode.FORBIDDEN
-      );
+      expect((reply.body as { error: { code: string } }).error.code).toBe(ErrorCode.FORBIDDEN);
     });
 
     it('should allow Admin access to DASHBOARD_ACCESS resources', async () => {
@@ -259,10 +257,7 @@ describe('RBAC Middleware', () => {
     });
 
     it('EVENT_MANAGEMENT should only include Admin and Client', () => {
-      expect(PERMISSIONS.EVENT_MANAGEMENT.allowedRoles).toEqual([
-        UserRole.ADMIN,
-        UserRole.CLIENT,
-      ]);
+      expect(PERMISSIONS.EVENT_MANAGEMENT.allowedRoles).toEqual([UserRole.ADMIN, UserRole.CLIENT]);
     });
   });
 });

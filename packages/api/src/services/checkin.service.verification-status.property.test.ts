@@ -179,7 +179,7 @@ describe('Property 10: Scanner Verification Status Mapping', () => {
           });
 
           const qrPayload = createValidQRPayload(guestId, eventId);
-          const result = await service.verifyQRScan(qrPayload, eventId);
+          const result = await service.verifyQRScan('tenant-001', qrPayload, eventId);
 
           // Property: status is GREEN
           expect(result.status).toBe(VerificationStatus.GREEN);
@@ -221,7 +221,7 @@ describe('Property 10: Scanner Verification Status Mapping', () => {
             encryptionKey: TEST_ENCRYPTION_KEY,
           });
 
-          const result = await service.verifyQRScan(invalidPayload, eventId);
+          const result = await service.verifyQRScan('tenant-001', invalidPayload, eventId);
 
           // Property: status is RED
           expect(result.status).toBe(VerificationStatus.RED);
@@ -272,7 +272,7 @@ describe('Property 10: Scanner Verification Status Mapping', () => {
           const qrPayload = createValidQRPayload(guestId, eventA);
 
           // But we scan at eventB
-          const result = await service.verifyQRScan(qrPayload, eventB);
+          const result = await service.verifyQRScan('tenant-001', qrPayload, eventB);
 
           // Property: status is RED (event mismatch)
           expect(result.status).toBe(VerificationStatus.RED);
@@ -319,11 +319,11 @@ describe('Property 10: Scanner Verification Status Mapping', () => {
           const qrPayload = createValidQRPayload(guestId, eventId);
 
           // First scan: should be GREEN
-          const firstResult = await service.verifyQRScan(qrPayload, eventId);
+          const firstResult = await service.verifyQRScan('tenant-001', qrPayload, eventId);
           expect(firstResult.status).toBe(VerificationStatus.GREEN);
 
           // Second scan: should be YELLOW
-          const secondResult = await service.verifyQRScan(qrPayload, eventId);
+          const secondResult = await service.verifyQRScan('tenant-001', qrPayload, eventId);
 
           // Property: status is YELLOW
           expect(secondResult.status).toBe(VerificationStatus.YELLOW);
@@ -373,10 +373,10 @@ describe('Property 10: Scanner Verification Status Mapping', () => {
           let result;
           if (useValidQR) {
             const qrPayload = createValidQRPayload(guestId, eventId);
-            result = await service.verifyQRScan(qrPayload, eventId);
+            result = await service.verifyQRScan('tenant-001', qrPayload, eventId);
           } else {
             // Use an invalid payload
-            result = await service.verifyQRScan('invalid-qr-data', eventId);
+            result = await service.verifyQRScan('tenant-001', 'invalid-qr-data', eventId);
           }
 
           // Property: status is exactly one of the three valid values
@@ -421,7 +421,7 @@ describe('Property 10: Scanner Verification Status Mapping', () => {
           });
 
           const qrPayload = createValidQRPayload(guestId, eventId);
-          const result = await service.verifyQRScan(qrPayload, eventId);
+          const result = await service.verifyQRScan('tenant-001', qrPayload, eventId);
 
           // Only check if result is GREEN (which it should be for first scan)
           if (result.status === VerificationStatus.GREEN) {
@@ -464,7 +464,7 @@ describe('Property 10: Scanner Verification Status Mapping', () => {
             encryptionKey: TEST_ENCRYPTION_KEY,
           });
 
-          const result = await service.verifyQRScan(invalidPayload, eventId);
+          const result = await service.verifyQRScan('tenant-001', invalidPayload, eventId);
 
           // Only check if result is RED
           if (result.status === VerificationStatus.RED) {

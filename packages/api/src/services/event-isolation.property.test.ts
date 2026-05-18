@@ -4,17 +4,12 @@ import {
   GuestGroup,
   GuestType,
   AttendanceType,
-  CheckInMethod,
-  DeliveryStatus,
-  ErrorCode,
 } from '@wedding/shared';
 import {
   GuestService,
   GuestRepository,
   GuestRecord,
-  QRCodeRecord,
-  PaginatedGuestList,
-  GuestFilterOptions,
+  GuestListItem,
 } from './guest.service';
 import {
   RsvpService,
@@ -28,8 +23,6 @@ import {
   CheckInRepository,
   CheckInRecord,
   GuestInfo,
-  QRCodeInfo,
-  GuestSearchResult,
   RedisClient,
   CheckInBroadcaster,
 } from './checkin.service';
@@ -140,19 +133,20 @@ function createMockGuestRepository(): GuestRepository & {
       const page = pagination.page ?? 1;
       const perPage = pagination.per_page ?? 50;
       const start = (page - 1) * perPage;
-      const data = eventGuests.slice(start, start + perPage).map((g) => ({
+      const data: GuestListItem[] = eventGuests.slice(start, start + perPage).map((g) => ({
         id: g.id,
-        event_id: g.event_id,
         name: g.name,
         slug: g.slug,
         group: g.group,
         type: g.type,
+        plus_one_count: g.plus_one_count,
         phone: g.phone,
         email: g.email,
-        plus_one_count: g.plus_one_count,
-        rsvp_status: null,
-        check_in_status: null,
+        invitation_url: g.invitation_url,
         delivery_status: g.delivery_status,
+        rsvp_status: null,
+        check_in_status: false,
+        qr_active: true,
       }));
       return {
         data,
@@ -186,6 +180,8 @@ function createMockGuestRepository(): GuestRepository & {
       id: eventId,
       slug: `event-${eventId.slice(0, 8)}`,
     }),
+    findGuestNamesByEvent: async () => [],
+    searchGuestsByName: async () => [],
   };
 }
 
@@ -201,14 +197,9 @@ function createMockRsvpRepository(
   return {
     rsvps,
 
-    findGuestById: async (guestId, tenantId) => {
-      for (const eventGuests of guestsPerEvent.values()) {
-        const found = eventGuests.find(
-          (g) => g.id === guestId && g.tenant_id === tenantId
-        );
-        if (found) return found;
-      }
-      return null;
+    findGuestByIdAndEvent: async (guestId: string, eventId: string) => {
+      const eventGuests = guestsPerEvent.get(eventId) || [];
+      return eventGuests.find((g) => g.id === guestId) || null;
     },
 
     findRsvpByGuestId: async (guestId) => {
@@ -250,7 +241,7 @@ function createMockRsvpRepository(
  * with guest search scoped to events.
  */
 function createMockCheckInRepository(
-  guestsPerEvent: Map<string, GuestInfo[]>
+  guestsPerEvent: Map<string, (GuestInfo & { tenant_id: string; type: GuestType })[]>
 ): CheckInRepository & { checkIns: Map<string, CheckInRecord> } {
   const checkIns = new Map<string, CheckInRecord>();
 
@@ -330,8 +321,9 @@ function createMockCheckInRepository(
 function createMockRedisClient(): RedisClient {
   const store = new Map<string, string>();
   return {
-    set: async (key, value, _mode?, _duration?) => {
+    set: async (key, value, _mode, _duration, _flag) => {
       store.set(key, value);
+      return 'OK';
     },
     get: async (key) => store.get(key) || null,
   };
@@ -378,13 +370,21 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
           });
 
           // Add guests to event 1
+          const createdE1Ids = new Set<string>();
           for (const name of namesE1) {
-            await service.addGuest(eventId1, tenantId, { name, group });
+            const res = await service.addGuest(eventId1, tenantId, { name, group, type: GuestType.INVITED, plus_one_count: 0 });
+            if (res && 'id' in res) {
+              createdE1Ids.add(res.id);
+            }
           }
 
           // Add guests to event 2
+          const createdE2Ids = new Set<string>();
           for (const name of namesE2) {
-            await service.addGuest(eventId2, tenantId, { name, group });
+            const res = await service.addGuest(eventId2, tenantId, { name, group, type: GuestType.INVITED, plus_one_count: 0 });
+            if (res && 'id' in res) {
+              createdE2Ids.add(res.id);
+            }
           }
 
           // Query guests for event 1
@@ -400,16 +400,16 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
           });
 
           // Verify isolation: event 1 results only contain event 1 guests
-          if ('data' in result1) {
+          if (result1 && 'data' in result1) {
             for (const guest of result1.data) {
-              expect(guest.event_id).toBe(eventId1);
+              expect(createdE1Ids.has(guest.id)).toBe(true);
             }
           }
 
           // Verify isolation: event 2 results only contain event 2 guests
-          if ('data' in result2) {
+          if (result2 && 'data' in result2) {
             for (const guest of result2.data) {
-              expect(guest.event_id).toBe(eventId2);
+              expect(createdE2Ids.has(guest.id)).toBe(true);
             }
           }
 
@@ -445,7 +445,7 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
 
           // Set up guests in two events with a shared name pattern
           const sharedName = 'SharedGuest';
-          const guestsEvent1: GuestInfo[] = [
+          const guestsEvent1: (GuestInfo & { tenant_id: string; type: GuestType })[] = [
             {
               id: 'guest-e1-1',
               event_id: eventId1,
@@ -464,7 +464,7 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
             },
           ];
 
-          const guestsEvent2: GuestInfo[] = [
+          const guestsEvent2: (GuestInfo & { tenant_id: string; type: GuestType })[] = [
             {
               id: 'guest-e2-1',
               event_id: eventId2,
@@ -483,7 +483,7 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
             },
           ];
 
-          const guestsPerEvent = new Map<string, GuestInfo[]>();
+          const guestsPerEvent = new Map<string, (GuestInfo & { tenant_id: string; type: GuestType })[]>();
           guestsPerEvent.set(eventId1, guestsEvent1);
           guestsPerEvent.set(eventId2, guestsEvent2);
 
@@ -499,7 +499,7 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
           });
 
           // Search for "SharedGuest" in event 1
-          const searchResult = await service.searchGuests(eventId1, 'SharedGuest');
+          const searchResult = await service.searchGuests(tenantId, eventId1, 'SharedGuest');
 
           // All results must belong to event 1 only
           if (Array.isArray(searchResult)) {
@@ -560,21 +560,21 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
           const service = new RsvpService({ repository, broadcaster });
 
           // Submit RSVP for guest in event 1
-          await service.submitRsvp(guestE1.id, tenantId, {
+          await service.submitRsvp(guestE1.id, eventId1, {
             attendance,
             guest_count: 1,
           });
 
           // Submit RSVP for guest in event 2
-          await service.submitRsvp(guestE2.id, tenantId, {
+          await service.submitRsvp(guestE2.id, eventId2, {
             attendance,
             guest_count: 2,
           });
 
           // Query RSVP for guest in event 1
-          const rsvp1 = await service.getRsvp(guestE1.id, tenantId);
+          const rsvp1 = await service.getRsvp(guestE1.id, eventId1);
           // Query RSVP for guest in event 2
-          const rsvp2 = await service.getRsvp(guestE2.id, tenantId);
+          const rsvp2 = await service.getRsvp(guestE2.id, eventId2);
 
           // Verify isolation: RSVP for event 1 guest has event 1 guest's data
           if (rsvp1 && 'guest_id' in rsvp1) {
@@ -589,7 +589,7 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
           }
 
           // Verify: querying with event 2 guest ID should not return event 1 RSVP
-          const crossQuery = await service.getRsvp(guestE2.id, tenantId);
+          const crossQuery = await service.getRsvp(guestE2.id, eventId2);
           if (crossQuery && 'guest_id' in crossQuery) {
             expect(crossQuery.guest_count).toBe(2); // event 2's count, not event 1's
           }
@@ -615,7 +615,7 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
         async (tenantId, eventId1, eventId2) => {
           fc.pre(eventId1 !== eventId2);
 
-          const guestsEvent1: GuestInfo[] = [
+          const guestsEvent1: (GuestInfo & { tenant_id: string; type: GuestType })[] = [
             {
               id: 'guest-checkin-e1',
               event_id: eventId1,
@@ -626,7 +626,7 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
             },
           ];
 
-          const guestsEvent2: GuestInfo[] = [
+          const guestsEvent2: (GuestInfo & { tenant_id: string; type: GuestType })[] = [
             {
               id: 'guest-checkin-e2',
               event_id: eventId2,
@@ -637,7 +637,7 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
             },
           ];
 
-          const guestsPerEvent = new Map<string, GuestInfo[]>();
+          const guestsPerEvent = new Map<string, (GuestInfo & { tenant_id: string; type: GuestType })[]>();
           guestsPerEvent.set(eventId1, guestsEvent1);
           guestsPerEvent.set(eventId2, guestsEvent2);
 
@@ -653,8 +653,9 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
           });
 
           // Perform manual check-in for guest in event 1
-          // manualCheckIn signature: (guestId, eventId, scannerDeviceId?)
+          // manualCheckIn signature: (tenantId, guestId, eventId, scannerDeviceId?)
           const checkInResult = await service.manualCheckIn(
+            tenantId,
             'guest-checkin-e1',
             eventId1,
             null
@@ -667,7 +668,7 @@ describe('Property 2: Event Data Isolation Within Tenant', () => {
           }
 
           // Search in event 2 should not show event 1's checked-in guest
-          const searchInEvent2 = await service.searchGuests(eventId2, 'CheckIn');
+          const searchInEvent2 = await service.searchGuests(tenantId, eventId2, 'CheckIn');
 
           if (Array.isArray(searchInEvent2)) {
             // None of the results should be the event 1 guest

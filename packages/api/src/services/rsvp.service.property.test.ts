@@ -5,7 +5,6 @@ import {
   RsvpService,
   RsvpRepository,
   RsvpBroadcaster,
-  RsvpRecord,
   GuestForRsvp,
   isRsvpError,
 } from './rsvp.service';
@@ -17,14 +16,6 @@ const arbNonDeclineAttendance = fc.constantFrom(
   AttendanceType.AKAD,
   AttendanceType.RESEPSI,
   AttendanceType.BOTH
-);
-
-/** Generates any valid attendance type */
-const arbAnyAttendance = fc.constantFrom(
-  AttendanceType.AKAD,
-  AttendanceType.RESEPSI,
-  AttendanceType.BOTH,
-  AttendanceType.DECLINE
 );
 
 /** Generates a plus_one_count (0 to 10, representing realistic wedding scenarios) */
@@ -40,7 +31,7 @@ const arbTenantId = fc.uuid();
 
 function createMockRepository(guest: GuestForRsvp | null): RsvpRepository {
   return {
-    findGuestById: async () => guest,
+    findGuestByIdAndEvent: async () => guest,
     findRsvpByGuestId: async () => null,
     createRsvp: async (data) => ({
       id: 'rsvp-' + Math.random().toString(36).slice(2),

@@ -36,7 +36,7 @@ export interface RsvpBroadcastPayload {
 // --- Repository interface (dependency injection) ---
 
 export interface RsvpRepository {
-  findGuestById(guestId: string, tenantId: string): Promise<GuestForRsvp | null>;
+  findGuestByIdAndEvent(guestId: string, eventId: string): Promise<GuestForRsvp | null>;
 
   findRsvpByGuestId(guestId: string): Promise<RsvpRecord | null>;
 
@@ -83,11 +83,11 @@ export class RsvpService {
    */
   async submitRsvp(
     guestId: string,
-    tenantId: string,
+    eventId: string,
     input: CreateRsvpInput
   ): Promise<RsvpRecord | RsvpServiceError> {
-    // Verify guest exists and belongs to tenant
-    const guest = await this.repository.findGuestById(guestId, tenantId);
+    // Verify guest exists and belongs to event
+    const guest = await this.repository.findGuestByIdAndEvent(guestId, eventId);
     if (!guest) {
       return {
         code: ErrorCode.GUEST_NOT_FOUND,
@@ -155,10 +155,10 @@ export class RsvpService {
    */
   async getRsvp(
     guestId: string,
-    tenantId: string
+    eventId: string
   ): Promise<RsvpRecord | null | RsvpServiceError> {
-    // Verify guest exists and belongs to tenant
-    const guest = await this.repository.findGuestById(guestId, tenantId);
+    // Verify guest exists and belongs to event
+    const guest = await this.repository.findGuestByIdAndEvent(guestId, eventId);
     if (!guest) {
       return {
         code: ErrorCode.GUEST_NOT_FOUND,

@@ -101,16 +101,14 @@ describe('Response Cache Plugin', () => {
     // Register test routes
     app.get('/events/current', async () => ({ id: 'evt-1', name: 'Wedding' }));
     app.get('/events/:id/stats', async () => ({ total_guests: 100 }));
-    app.get('/events/:id/sections', async () => ({ sections: [] }));
     app.get('/cms/sections/:eventId', async () => ({ data: [] }));
     app.get('/cms/sections/:eventId/:sectionId', async () => ({ id: 'sec-1' }));
     app.get('/guests', async () => ({ data: [], pagination: {} }));
     app.get('/guests/search', async () => ({ data: [] }));
     app.post('/guests', async () => ({ id: 'guest-1' }));
     app.put('/guests/:id', async () => ({ id: 'guest-1', name: 'Updated' }));
-    app.put('/events/:id/sections/:sectionId/content', async () => ({ updated: true }));
-    app.put('/events/:id/sections/:sectionId/toggle', async () => ({ updated: true }));
     app.put('/cms/sections/:eventId/:sectionId/content', async () => ({ updated: true }));
+    app.put('/cms/sections/:eventId/:sectionId/toggle', async () => ({ updated: true }));
     app.get('/other/route', async () => ({ not: 'cached' }));
 
     await app.ready();
@@ -202,7 +200,7 @@ describe('Response Cache Plugin', () => {
 
     it('detects event section toggle', () => {
       const rule = shouldInvalidate(
-        '/events/evt-1/sections/sec-1/toggle',
+        '/cms/sections/evt-1/sec-1/toggle',
         'PUT',
         DEFAULT_INVALIDATION_RULES
       );
@@ -361,20 +359,20 @@ describe('Response Cache Plugin', () => {
     });
 
     it('invalidates event cache on section toggle', async () => {
-      // Populate event sections cache
-      await app.inject({ method: 'GET', url: '/events/evt-1/sections' });
-      const hit = await app.inject({ method: 'GET', url: '/events/evt-1/sections' });
+      // Populate CMS sections cache
+      await app.inject({ method: 'GET', url: '/cms/sections/evt-1' });
+      const hit = await app.inject({ method: 'GET', url: '/cms/sections/evt-1' });
       expect(hit.headers['x-cache']).toBe('HIT');
 
       // Toggle section
       await app.inject({
         method: 'PUT',
-        url: '/events/evt-1/sections/sec-1/toggle',
+        url: '/cms/sections/evt-1/sec-1/toggle',
         payload: { is_active: false },
       });
 
-      // Event cache should be invalidated
-      const res = await app.inject({ method: 'GET', url: '/events/evt-1/sections' });
+      // CMS cache should be invalidated
+      const res = await app.inject({ method: 'GET', url: '/cms/sections/evt-1' });
       expect(res.headers['x-cache']).toBe('MISS');
     });
   });

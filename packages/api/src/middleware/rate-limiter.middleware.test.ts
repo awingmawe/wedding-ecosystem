@@ -17,8 +17,8 @@ function createMockRequest(tenantId?: string, ip = '127.0.0.1'): FastifyRequest 
   } as unknown as FastifyRequest;
 
   if (tenantId) {
-    (req as AuthenticatedRequest).tenantContext = {
-      user_id: 'user-1',
+    (req as any).user = {
+      id: 'user-1',
       tenant_id: tenantId,
       role: 'client',
       email: 'test@example.com',
@@ -40,9 +40,15 @@ function createMockReply(): FastifyReply & {
   };
 
   const reply = {
-    get statusCode() { return state.statusCode; },
-    get body() { return state.body; },
-    get headers() { return state.headers; },
+    get statusCode() {
+      return state.statusCode;
+    },
+    get body() {
+      return state.body;
+    },
+    get headers() {
+      return state.headers;
+    },
     status(code: number) {
       state.statusCode = code;
       return reply;

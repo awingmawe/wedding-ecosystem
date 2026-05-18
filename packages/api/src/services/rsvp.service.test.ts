@@ -13,7 +13,7 @@ import { AttendanceType, ErrorCode } from '@wedding/shared';
 
 function createMockRepository(): RsvpRepository {
   return {
-    findGuestById: vi.fn(),
+    findGuestByIdAndEvent: vi.fn(),
     findRsvpByGuestId: vi.fn(),
     createRsvp: vi.fn(),
     updateRsvp: vi.fn(),
@@ -30,7 +30,7 @@ function createMockGuest(overrides: Partial<GuestForRsvp> = {}): GuestForRsvp {
   return {
     id: 'guest-001',
     event_id: 'event-001',
-    tenant_id: 'tenant-001',
+    tenant_id: 'event-001',
     name: 'John Doe',
     plus_one_count: 2,
     ...overrides,
@@ -67,11 +67,11 @@ describe('RsvpService', () => {
         const mockGuest = createMockGuest();
         const mockRsvp = createMockRsvp({ attendance: AttendanceType.AKAD, guest_count: 1 });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(null);
         vi.mocked(repository.createRsvp).mockResolvedValue(mockRsvp);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.AKAD,
           guest_count: 1,
         });
@@ -87,11 +87,11 @@ describe('RsvpService', () => {
         const mockGuest = createMockGuest();
         const mockRsvp = createMockRsvp({ attendance: AttendanceType.RESEPSI, guest_count: 2 });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(null);
         vi.mocked(repository.createRsvp).mockResolvedValue(mockRsvp);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.RESEPSI,
           guest_count: 2,
         });
@@ -107,11 +107,11 @@ describe('RsvpService', () => {
         const mockGuest = createMockGuest();
         const mockRsvp = createMockRsvp({ attendance: AttendanceType.BOTH, guest_count: 3 });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(null);
         vi.mocked(repository.createRsvp).mockResolvedValue(mockRsvp);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.BOTH,
           guest_count: 3,
         });
@@ -127,11 +127,11 @@ describe('RsvpService', () => {
         const mockGuest = createMockGuest({ plus_one_count: 2 }); // max = 3
         const mockRsvp = createMockRsvp({ guest_count: 3 });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(null);
         vi.mocked(repository.createRsvp).mockResolvedValue(mockRsvp);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.BOTH,
           guest_count: 3,
         });
@@ -143,11 +143,11 @@ describe('RsvpService', () => {
         const mockGuest = createMockGuest({ plus_one_count: 0 }); // max = 1
         const mockRsvp = createMockRsvp({ guest_count: 1 });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(null);
         vi.mocked(repository.createRsvp).mockResolvedValue(mockRsvp);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.AKAD,
           guest_count: 1,
         });
@@ -164,11 +164,11 @@ describe('RsvpService', () => {
           guest_count: 0,
         });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(null);
         vi.mocked(repository.createRsvp).mockResolvedValue(mockRsvp);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.DECLINE,
           guest_count: 0,
         });
@@ -191,12 +191,12 @@ describe('RsvpService', () => {
           guest_count: 0,
         });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(null);
         vi.mocked(repository.createRsvp).mockResolvedValue(mockRsvp);
 
         // Even though input says guest_count: 5, decline should force it to 0
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.DECLINE,
           guest_count: 0, // Zod schema enforces 0 for decline
         });
@@ -214,9 +214,9 @@ describe('RsvpService', () => {
       it('should reject when guest_count exceeds plus_one_count + 1', async () => {
         const mockGuest = createMockGuest({ plus_one_count: 2 }); // max = 3
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.BOTH,
           guest_count: 4, // exceeds max of 3
         });
@@ -231,9 +231,9 @@ describe('RsvpService', () => {
       it('should reject when guest_count is 0 for non-decline attendance', async () => {
         const mockGuest = createMockGuest();
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.AKAD,
           guest_count: 0, // below minimum of 1
         });
@@ -248,9 +248,9 @@ describe('RsvpService', () => {
       it('should reject when plus_one_count is 0 and guest_count is 2', async () => {
         const mockGuest = createMockGuest({ plus_one_count: 0 }); // max = 1
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.RESEPSI,
           guest_count: 2, // exceeds max of 1
         });
@@ -276,11 +276,11 @@ describe('RsvpService', () => {
           submitted_at: new Date('2024-02-01'),
         });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(existingRsvp);
         vi.mocked(repository.updateRsvp).mockResolvedValue(updatedRsvp);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.BOTH,
           guest_count: 3,
         });
@@ -310,11 +310,11 @@ describe('RsvpService', () => {
           guest_count: 0,
         });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(existingRsvp);
         vi.mocked(repository.updateRsvp).mockResolvedValue(updatedRsvp);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.DECLINE,
           guest_count: 0,
         });
@@ -337,11 +337,11 @@ describe('RsvpService', () => {
           guest_count: 2,
         });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(existingRsvp);
         vi.mocked(repository.updateRsvp).mockResolvedValue(updatedRsvp);
 
-        const result = await service.submitRsvp('guest-001', 'tenant-001', {
+        const result = await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.RESEPSI,
           guest_count: 2,
         });
@@ -359,11 +359,11 @@ describe('RsvpService', () => {
         const mockGuest = createMockGuest();
         const mockRsvp = createMockRsvp();
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(null);
         vi.mocked(repository.createRsvp).mockResolvedValue(mockRsvp);
 
-        await service.submitRsvp('guest-001', 'tenant-001', {
+        await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.BOTH,
           guest_count: 2,
         });
@@ -385,11 +385,11 @@ describe('RsvpService', () => {
           guest_count: 0,
         });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(null);
         vi.mocked(repository.createRsvp).mockResolvedValue(mockRsvp);
 
-        await service.submitRsvp('guest-001', 'tenant-001', {
+        await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.DECLINE,
           guest_count: 0,
         });
@@ -412,11 +412,11 @@ describe('RsvpService', () => {
           guest_count: 1,
         });
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
         vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(existingRsvp);
         vi.mocked(repository.updateRsvp).mockResolvedValue(updatedRsvp);
 
-        await service.submitRsvp('guest-001', 'tenant-001', {
+        await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.AKAD,
           guest_count: 1,
         });
@@ -434,9 +434,9 @@ describe('RsvpService', () => {
       it('should NOT broadcast when validation fails', async () => {
         const mockGuest = createMockGuest({ plus_one_count: 0 }); // max = 1
 
-        vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
 
-        await service.submitRsvp('guest-001', 'tenant-001', {
+        await service.submitRsvp('guest-001', 'event-001', {
           attendance: AttendanceType.BOTH,
           guest_count: 5, // exceeds limit
         });
@@ -445,9 +445,9 @@ describe('RsvpService', () => {
       });
 
       it('should NOT broadcast when guest not found', async () => {
-        vi.mocked(repository.findGuestById).mockResolvedValue(null);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(null);
 
-        await service.submitRsvp('nonexistent', 'tenant-001', {
+        await service.submitRsvp('nonexistent', 'event-001', {
           attendance: AttendanceType.BOTH,
           guest_count: 1,
         });
@@ -458,9 +458,9 @@ describe('RsvpService', () => {
 
     describe('error cases', () => {
       it('should return error if guest not found', async () => {
-        vi.mocked(repository.findGuestById).mockResolvedValue(null);
+        vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(null);
 
-        const result = await service.submitRsvp('nonexistent', 'tenant-001', {
+        const result = await service.submitRsvp('nonexistent', 'event-001', {
           attendance: AttendanceType.BOTH,
           guest_count: 1,
         });
@@ -478,10 +478,10 @@ describe('RsvpService', () => {
       const mockGuest = createMockGuest();
       const mockRsvp = createMockRsvp();
 
-      vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+      vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
       vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(mockRsvp);
 
-      const result = await service.getRsvp('guest-001', 'tenant-001');
+      const result = await service.getRsvp('guest-001', 'event-001');
 
       expect(isRsvpError(result)).toBe(false);
       if (!isRsvpError(result) && result !== null) {
@@ -493,18 +493,18 @@ describe('RsvpService', () => {
     it('should return null if guest has no RSVP', async () => {
       const mockGuest = createMockGuest();
 
-      vi.mocked(repository.findGuestById).mockResolvedValue(mockGuest);
+      vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
       vi.mocked(repository.findRsvpByGuestId).mockResolvedValue(null);
 
-      const result = await service.getRsvp('guest-001', 'tenant-001');
+      const result = await service.getRsvp('guest-001', 'event-001');
 
       expect(result).toBeNull();
     });
 
     it('should return error if guest not found', async () => {
-      vi.mocked(repository.findGuestById).mockResolvedValue(null);
+      vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(null);
 
-      const result = await service.getRsvp('nonexistent', 'tenant-001');
+      const result = await service.getRsvp('nonexistent', 'event-001');
 
       expect(isRsvpError(result)).toBe(true);
       if (isRsvpError(result)) {

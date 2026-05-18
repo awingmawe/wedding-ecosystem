@@ -4,14 +4,14 @@
 
 - **Framework**: Vitest 3.2.4
 - **Property-Based Testing**: fast-check 4.8.0
-- **Total Tests**: ~1149 across all packages
+- **Total Tests**: ~1218 across all packages
 - **Coverage Target**: 80% minimum for business logic
 
 ## Test Distribution
 
 | Package | Tests | Type |
 |---------|-------|------|
-| `@wedding/api` | ~843 | Unit + Integration + Property-based |
+| `@wedding/api` | ~912 | Unit + Integration + Property-based |
 | `@wedding/shared` | ~63 | Unit + Property-based |
 | `@wedding/realtime` | ~87 | Unit + Integration + Property-based |
 | `@wedding/dashboard` | ~81 | Unit + Property-based |
@@ -41,29 +41,56 @@ npx turbo test --filter=@wedding/scanner
 
 ## Patterns
 
-### 1. Repository Interface Mocking
+### 1. Two-Level Mocking Strategy
 
-Services use dependency injection via repository interfaces. Tests provide mock implementations:
+The Guest domain uses a **3-layer architecture** (route → service → repository), which requires two distinct mocking strategies:
+
+#### Level 1 — Service tests: mock the repository interface
+
+Services are defined with a repository interface (e.g., `GuestRepository`). Tests inject a mock that implements the interface:
 
 ```typescript
-// Define repository interface in service file
-export interface RsvpRepository {
-  findGuestById(id: string): Promise<GuestForRsvp | null>;
-  findRsvpByGuestId(guestId: string): Promise<RsvpRecord | null>;
-  createRsvp(data: CreateRsvpInput): Promise<RsvpRecord>;
-  updateRsvp(id: string, data: UpdateRsvpInput): Promise<RsvpRecord>;
+// Interface defined in guest.service.ts
+export interface GuestRepository {
+  findById(id: string, tenantId: string): Promise<GuestRecord | null>;
+  create(data: CreateGuestData): Promise<GuestRecord>;
+  // ...
 }
 
-// Mock in test file
-function createMockRepository(): RsvpRepository {
+// Mock in guest.service.test.ts
+function createMockRepository(): GuestRepository {
   return {
-    findGuestById: vi.fn(),
-    findRsvpByGuestId: vi.fn(),
-    createRsvp: vi.fn(),
-    updateRsvp: vi.fn(),
+    findById: vi.fn(),
+    create: vi.fn(),
+    // ...
   };
 }
 ```
+
+#### Level 2 — Repository tests: mock PrismaClient
+
+Repository tests (`guest.repository.test.ts`) create a typed mock of the Prisma model delegate and assert that every call includes `tenant_id` in the `where` clause:
+
+```typescript
+const mockPrisma = {
+  guest: {
+    findMany: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+} as unknown as PrismaClient;
+
+it('should always scope queries by tenant_id', async () => {
+  await repo.findById('guest-1', 'tenant-1');
+  expect(mockPrisma.guest.findUnique).toHaveBeenCalledWith(
+    expect.objectContaining({ where: expect.objectContaining({ tenant_id: 'tenant-1' }) })
+  );
+});
+```
+
+**Rule**: If a domain does **not** yet have a `*.repository.ts` file, use Level 1 only (mock in service test). Once migrated, add Level 2 tests.
 
 ### 2. Factory Functions for Test Data
 

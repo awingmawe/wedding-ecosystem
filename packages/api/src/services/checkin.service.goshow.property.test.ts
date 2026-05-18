@@ -1,11 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { randomBytes } from 'crypto';
 import {
   CheckInMethod,
-  ErrorCode,
   GuestGroup,
-  GuestType,
 } from '@wedding/shared';
 import {
   CheckInService,
@@ -135,7 +132,7 @@ describe('Property 13: Go-Show Guest Tracking', () => {
             encryptionKey: TEST_ENCRYPTION_KEY,
           });
 
-          const result = await service.registerGoShow(guestName, eventId, scannerDeviceId);
+          const result = await service.registerGoShow('tenant-001', guestName, eventId, scannerDeviceId);
 
           // Should not be an error
           expect(isServiceError(result)).toBe(false);

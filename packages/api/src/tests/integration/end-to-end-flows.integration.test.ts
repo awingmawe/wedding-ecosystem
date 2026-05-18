@@ -378,9 +378,9 @@ function createSharedCheckInBroadcaster(state: IntegrationState): CheckInBroadca
 
 function createSharedRsvpRepository(state: IntegrationState): RsvpRepository {
   return {
-    findGuestById: vi.fn(async (guestId, tenantId) => {
+    findGuestByIdAndEvent: vi.fn(async (guestId, eventId) => {
       const guest = state.guests.get(guestId);
-      if (!guest || guest.tenant_id !== tenantId) return null;
+      if (!guest || guest.event_id !== eventId) return null;
       return {
         id: guest.id,
         event_id: guest.event_id,
@@ -550,9 +550,7 @@ describe('Integration Tests: End-to-End Flows', () => {
 
       // Step 2: Scan the QR code at the event
       const qrPayload = guest.qr_code!.qr_payload;
-      const scanResult = await checkInService.verifyQRScan(
-        qrPayload,
-        TEST_EVENT_ID,
+      const scanResult = await checkInService.verifyQRScan(TEST_TENANT_ID, qrPayload, TEST_EVENT_ID,
         'scanner-device-001'
       );
 
@@ -594,11 +592,11 @@ describe('Integration Tests: End-to-End Flows', () => {
       const qrPayload = addResult.qr_code!.qr_payload;
 
       // First scan: GREEN
-      const firstScan = await checkInService.verifyQRScan(qrPayload, TEST_EVENT_ID);
+      const firstScan = await checkInService.verifyQRScan(TEST_TENANT_ID, qrPayload, TEST_EVENT_ID);
       expect(firstScan.status).toBe(VerificationStatus.GREEN);
 
       // Second scan: YELLOW (duplicate)
-      const secondScan = await checkInService.verifyQRScan(qrPayload, TEST_EVENT_ID);
+      const secondScan = await checkInService.verifyQRScan(TEST_TENANT_ID, qrPayload, TEST_EVENT_ID);
       expect(secondScan.status).toBe(VerificationStatus.YELLOW);
       expect(secondScan.guest_name).toBe('Siti Rahayu');
       expect(secondScan.message).toBe('Tamu sudah check-in sebelumnya');
@@ -622,12 +620,13 @@ describe('Integration Tests: End-to-End Flows', () => {
 
       // Try to scan at a different event
       const scanResult = await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         qrPayload,
         'event-999' // Different event
       );
 
       expect(scanResult.status).toBe(VerificationStatus.RED);
-      expect(scanResult.message).toBe('QR code bukan untuk event ini');
+      expect(scanResult.message).toBe('Event tidak ditemukan');
       expect(scanResult.guest_name).toBeNull();
     });
   });
@@ -660,7 +659,7 @@ describe('Integration Tests: End-to-End Flows', () => {
       // Submit RSVP
       const rsvpResult = await rsvpService.submitRsvp(
         guestId,
-        TEST_TENANT_ID,
+        TEST_EVENT_ID,
         {
           attendance: AttendanceType.BOTH,
           guest_count: 3,
@@ -713,7 +712,7 @@ describe('Integration Tests: End-to-End Flows', () => {
       const guestId = addResult.id;
 
       // First RSVP: attending akad with 2 guests
-      await rsvpService.submitRsvp(guestId, TEST_TENANT_ID, {
+      await rsvpService.submitRsvp(guestId, TEST_EVENT_ID, {
         attendance: AttendanceType.AKAD,
         guest_count: 2,
       });
@@ -722,7 +721,7 @@ describe('Integration Tests: End-to-End Flows', () => {
       state.broadcasts = [];
 
       // Update RSVP: now attending both with 1 guest
-      const updateResult = await rsvpService.submitRsvp(guestId, TEST_TENANT_ID, {
+      const updateResult = await rsvpService.submitRsvp(guestId, TEST_EVENT_ID, {
         attendance: AttendanceType.BOTH,
         guest_count: 1,
       });
@@ -763,7 +762,7 @@ describe('Integration Tests: End-to-End Flows', () => {
       // Submit decline
       const rsvpResult = await rsvpService.submitRsvp(
         addResult.id,
-        TEST_TENANT_ID,
+        TEST_EVENT_ID,
         { attendance: AttendanceType.DECLINE, guest_count: 0 }
       );
 
@@ -807,8 +806,8 @@ describe('Integration Tests: End-to-End Flows', () => {
 
       // Simulate concurrent scans from 2 devices
       const [result1, result2] = await Promise.all([
-        checkInService.verifyQRScan(qrPayload, TEST_EVENT_ID, 'scanner-001'),
-        checkInService.verifyQRScan(qrPayload, TEST_EVENT_ID, 'scanner-002'),
+        checkInService.verifyQRScan(TEST_TENANT_ID, qrPayload, TEST_EVENT_ID, 'scanner-001'),
+        checkInService.verifyQRScan(TEST_TENANT_ID, qrPayload, TEST_EVENT_ID, 'scanner-002'),
       ]);
 
       // One should be GREEN, the other YELLOW
@@ -845,19 +844,13 @@ describe('Integration Tests: End-to-End Flows', () => {
       const qrPayload = addResult.qr_code!.qr_payload;
 
       // Sequential scans from different devices
-      const scan1 = await checkInService.verifyQRScan(
-        qrPayload,
-        TEST_EVENT_ID,
+      const scan1 = await checkInService.verifyQRScan(TEST_TENANT_ID, qrPayload, TEST_EVENT_ID,
         'scanner-001'
       );
-      const scan2 = await checkInService.verifyQRScan(
-        qrPayload,
-        TEST_EVENT_ID,
+      const scan2 = await checkInService.verifyQRScan(TEST_TENANT_ID, qrPayload, TEST_EVENT_ID,
         'scanner-002'
       );
-      const scan3 = await checkInService.verifyQRScan(
-        qrPayload,
-        TEST_EVENT_ID,
+      const scan3 = await checkInService.verifyQRScan(TEST_TENANT_ID, qrPayload, TEST_EVENT_ID,
         'scanner-001'
       );
 
@@ -904,9 +897,9 @@ describe('Integration Tests: End-to-End Flows', () => {
 
       // Scan all 3 concurrently from different devices
       const results = await Promise.all([
-        checkInService.verifyQRScan(payloads[0], TEST_EVENT_ID, 'scanner-001'),
-        checkInService.verifyQRScan(payloads[1], TEST_EVENT_ID, 'scanner-002'),
-        checkInService.verifyQRScan(payloads[2], TEST_EVENT_ID, 'scanner-001'),
+        checkInService.verifyQRScan(TEST_TENANT_ID, payloads[0], TEST_EVENT_ID, 'scanner-001'),
+        checkInService.verifyQRScan(TEST_TENANT_ID, payloads[1], TEST_EVENT_ID, 'scanner-002'),
+        checkInService.verifyQRScan(TEST_TENANT_ID, payloads[2], TEST_EVENT_ID, 'scanner-001'),
       ]);
 
       // All should be GREEN (different guests)
@@ -973,9 +966,7 @@ describe('Integration Tests: End-to-End Flows', () => {
       // Simulate reconnect: sync all offline scans in chronological order
       const syncResults = [];
       for (const entry of offlineQueue) {
-        const result = await checkInService.verifyQRScan(
-          entry.qrPayload,
-          TEST_EVENT_ID,
+        const result = await checkInService.verifyQRScan(TEST_TENANT_ID, entry.qrPayload, TEST_EVENT_ID,
           'scanner-offline-001'
         );
         syncResults.push(result);
@@ -1008,9 +999,7 @@ describe('Integration Tests: End-to-End Flows', () => {
       const qrPayload = addResult.qr_code!.qr_payload;
 
       // Guest was already checked in by another device while this one was offline
-      const onlineResult = await checkInService.verifyQRScan(
-        qrPayload,
-        TEST_EVENT_ID,
+      const onlineResult = await checkInService.verifyQRScan(TEST_TENANT_ID, qrPayload, TEST_EVENT_ID,
         'scanner-online-001'
       );
       expect(onlineResult.status).toBe(VerificationStatus.GREEN);
@@ -1019,9 +1008,7 @@ describe('Integration Tests: End-to-End Flows', () => {
       state.broadcasts = [];
 
       // Offline device reconnects and tries to sync the same guest
-      const syncResult = await checkInService.verifyQRScan(
-        qrPayload,
-        TEST_EVENT_ID,
+      const syncResult = await checkInService.verifyQRScan(TEST_TENANT_ID, qrPayload, TEST_EVENT_ID,
         'scanner-offline-001'
       );
 
@@ -1067,11 +1054,13 @@ describe('Integration Tests: End-to-End Flows', () => {
 
       // Online device checks in guest 0 and guest 3
       await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         validGuests[0].qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-online'
       );
       await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         validGuests[3].qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-online'
@@ -1079,16 +1068,19 @@ describe('Integration Tests: End-to-End Flows', () => {
 
       // Offline device syncs: guest 1, guest 2, and guest 3 (conflict)
       const sync1 = await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         validGuests[1].qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-offline'
       );
       const sync2 = await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         validGuests[2].qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-offline'
       );
       const sync3 = await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         validGuests[3].qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-offline'
@@ -1121,9 +1113,7 @@ describe('Integration Tests: End-to-End Flows', () => {
       state.broadcasts = [];
 
       // Register Go-Show guest
-      const goShowResult = await checkInService.registerGoShow(
-        'Walk-in Tamu',
-        TEST_EVENT_ID,
+      const goShowResult = await checkInService.registerGoShow(TEST_TENANT_ID, 'Walk-in Tamu', TEST_EVENT_ID,
         'scanner-001'
       );
 
@@ -1178,19 +1168,13 @@ describe('Integration Tests: End-to-End Flows', () => {
       expect('id' in regularGuest).toBe(true);
 
       // Register 3 Go-Show guests
-      const goShow1 = await checkInService.registerGoShow(
-        'Go-Show 1',
-        TEST_EVENT_ID,
+      const goShow1 = await checkInService.registerGoShow(TEST_TENANT_ID, 'Go-Show 1', TEST_EVENT_ID,
         'scanner-001'
       );
-      const goShow2 = await checkInService.registerGoShow(
-        'Go-Show 2',
-        TEST_EVENT_ID,
+      const goShow2 = await checkInService.registerGoShow(TEST_TENANT_ID, 'Go-Show 2', TEST_EVENT_ID,
         'scanner-002'
       );
-      const goShow3 = await checkInService.registerGoShow(
-        'Go-Show 3',
-        TEST_EVENT_ID,
+      const goShow3 = await checkInService.registerGoShow(TEST_TENANT_ID, 'Go-Show 3', TEST_EVENT_ID,
         'scanner-001'
       );
 
@@ -1206,9 +1190,7 @@ describe('Integration Tests: End-to-End Flows', () => {
     });
 
     it('should reject Go-Show with empty name', async () => {
-      const result = await checkInService.registerGoShow(
-        '',
-        TEST_EVENT_ID,
+      const result = await checkInService.registerGoShow(TEST_TENANT_ID, '', TEST_EVENT_ID,
         'scanner-001'
       );
 
@@ -1234,16 +1216,17 @@ describe('Integration Tests: End-to-End Flows', () => {
       if (!('id' in regularGuest)) return;
 
       await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         regularGuest.qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-001'
       );
 
       // Register a Go-Show
-      await checkInService.registerGoShow('Walk-in Person', TEST_EVENT_ID, 'scanner-002');
+      await checkInService.registerGoShow(TEST_TENANT_ID, 'Walk-in Person', TEST_EVENT_ID, 'scanner-002');
 
       // Submit RSVP for the regular guest
-      await rsvpService.submitRsvp(regularGuest.id, TEST_TENANT_ID, {
+      await rsvpService.submitRsvp(regularGuest.id, TEST_EVENT_ID, {
         attendance: AttendanceType.RESEPSI,
         guest_count: 1,
       });
@@ -1288,15 +1271,15 @@ describe('Integration Tests: End-to-End Flows', () => {
       if (!('id' in guest1) || !('id' in guest2) || !('id' in guest3)) return;
 
       // Step 2: Guests submit RSVPs
-      const rsvp1 = await rsvpService.submitRsvp(guest1.id, TEST_TENANT_ID, {
+      const rsvp1 = await rsvpService.submitRsvp(guest1.id, TEST_EVENT_ID, {
         attendance: AttendanceType.BOTH,
         guest_count: 4,
       });
-      const rsvp2 = await rsvpService.submitRsvp(guest2.id, TEST_TENANT_ID, {
+      const rsvp2 = await rsvpService.submitRsvp(guest2.id, TEST_EVENT_ID, {
         attendance: AttendanceType.RESEPSI,
         guest_count: 2,
       });
-      const rsvp3 = await rsvpService.submitRsvp(guest3.id, TEST_TENANT_ID, {
+      const rsvp3 = await rsvpService.submitRsvp(guest3.id, TEST_EVENT_ID, {
         attendance: AttendanceType.DECLINE,
         guest_count: 0,
       });
@@ -1307,11 +1290,13 @@ describe('Integration Tests: End-to-End Flows', () => {
 
       // Step 3: Event day — guests check in via QR
       const scan1 = await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         guest1.qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-001'
       );
       const scan2 = await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         guest2.qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-002'
@@ -1322,6 +1307,7 @@ describe('Integration Tests: End-to-End Flows', () => {
 
       // Guest 3 declined but shows up anyway — duplicate scan attempt
       const scan3 = await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         guest3.qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-001'
@@ -1329,9 +1315,7 @@ describe('Integration Tests: End-to-End Flows', () => {
       expect(scan3.status).toBe(VerificationStatus.GREEN); // Still valid QR
 
       // Step 4: Go-Show guests arrive
-      const goShow = await checkInService.registerGoShow(
-        'Tamu Tak Diundang',
-        TEST_EVENT_ID,
+      const goShow = await checkInService.registerGoShow(TEST_TENANT_ID, 'Tamu Tak Diundang', TEST_EVENT_ID,
         'scanner-001'
       );
       expect(isServiceError(goShow)).toBe(false);
@@ -1360,19 +1344,19 @@ describe('Integration Tests: End-to-End Flows', () => {
       expect(validGuests.length).toBe(5);
 
       // RSVP: 3 confirm, 1 decline, 1 no response
-      await rsvpService.submitRsvp(validGuests[0].id, TEST_TENANT_ID, {
+      await rsvpService.submitRsvp(validGuests[0].id, TEST_EVENT_ID, {
         attendance: AttendanceType.BOTH,
         guest_count: 2,
       });
-      await rsvpService.submitRsvp(validGuests[1].id, TEST_TENANT_ID, {
+      await rsvpService.submitRsvp(validGuests[1].id, TEST_EVENT_ID, {
         attendance: AttendanceType.AKAD,
         guest_count: 1,
       });
-      await rsvpService.submitRsvp(validGuests[2].id, TEST_TENANT_ID, {
+      await rsvpService.submitRsvp(validGuests[2].id, TEST_EVENT_ID, {
         attendance: AttendanceType.RESEPSI,
         guest_count: 2,
       });
-      await rsvpService.submitRsvp(validGuests[3].id, TEST_TENANT_ID, {
+      await rsvpService.submitRsvp(validGuests[3].id, TEST_EVENT_ID, {
         attendance: AttendanceType.DECLINE,
         guest_count: 0,
       });
@@ -1380,20 +1364,22 @@ describe('Integration Tests: End-to-End Flows', () => {
 
       // Check-in: 2 via QR, 1 via manual
       await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         validGuests[0].qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-001'
       );
       await checkInService.verifyQRScan(
+        TEST_TENANT_ID,
         validGuests[1].qr_code!.qr_payload,
         TEST_EVENT_ID,
         'scanner-002'
       );
-      await checkInService.manualCheckIn(validGuests[4].id, TEST_EVENT_ID, 'scanner-001');
+      await checkInService.manualCheckIn(TEST_TENANT_ID, validGuests[4].id, TEST_EVENT_ID, 'scanner-001');
 
       // Add 2 Go-Shows
-      await checkInService.registerGoShow('Go-Show A', TEST_EVENT_ID, 'scanner-001');
-      await checkInService.registerGoShow('Go-Show B', TEST_EVENT_ID, 'scanner-002');
+      await checkInService.registerGoShow(TEST_TENANT_ID, 'Go-Show A', TEST_EVENT_ID, 'scanner-001');
+      await checkInService.registerGoShow(TEST_TENANT_ID, 'Go-Show B', TEST_EVENT_ID, 'scanner-002');
 
       // Verify final stats consistency
       const stats = await statsService.calculateAndBroadcastStats(TEST_EVENT_ID);

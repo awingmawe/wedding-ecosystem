@@ -95,6 +95,7 @@ describe('CheckInService', () => {
     repository = createMockRepository();
     redis = createMockRedis();
     broadcaster = createMockBroadcaster();
+    vi.mocked(repository.findEventById).mockResolvedValue({ id: 'event-001', tenant_id: 'tenant-001' });
     service = new CheckInService({
       repository,
       redis,
@@ -143,7 +144,7 @@ describe('CheckInService', () => {
           checked_in_at: new Date(),
         });
 
-        const result = await service.verifyQRScan(qrPayload, 'event-001');
+        const result = await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         expect(result.status).toBe(VerificationStatus.GREEN);
         expect(result.guest_name).toBe('John Doe');
@@ -166,7 +167,7 @@ describe('CheckInService', () => {
           checked_in_at: new Date(),
         });
 
-        await service.verifyQRScan(qrPayload, 'event-001', 'scanner-001');
+        await service.verifyQRScan('tenant-001', qrPayload, 'event-001', 'scanner-001');
 
         expect(repository.createCheckIn).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -191,7 +192,7 @@ describe('CheckInService', () => {
           checked_in_at: new Date(),
         });
 
-        await service.verifyQRScan(qrPayload, 'event-001');
+        await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         expect(redis.set).toHaveBeenCalledWith(
           'checkin:guest-001',
@@ -205,7 +206,7 @@ describe('CheckInService', () => {
 
     describe('RED - invalid/not found/wrong event (Req 7.3)', () => {
       it('should return RED when QR payload cannot be decrypted', async () => {
-        const result = await service.verifyQRScan('invalid-payload', 'event-001');
+        const result = await service.verifyQRScan('tenant-001', 'invalid-payload', 'event-001');
 
         expect(result.status).toBe(VerificationStatus.RED);
         expect(result.guest_name).toBeNull();
@@ -215,14 +216,14 @@ describe('CheckInService', () => {
       });
 
       it('should return RED when QR payload has wrong format (no colon)', async () => {
-        const result = await service.verifyQRScan('nocolonseparator', 'event-001');
+        const result = await service.verifyQRScan('tenant-001', 'nocolonseparator', 'event-001');
 
         expect(result.status).toBe(VerificationStatus.RED);
         expect(result.message).toBe('QR code tidak valid');
       });
 
       it('should return RED when QR payload has invalid hex', async () => {
-        const result = await service.verifyQRScan('zzzz:xxxx', 'event-001');
+        const result = await service.verifyQRScan('tenant-001', 'zzzz:xxxx', 'event-001');
 
         expect(result.status).toBe(VerificationStatus.RED);
         expect(result.message).toBe('QR code tidak valid');
@@ -232,7 +233,7 @@ describe('CheckInService', () => {
         // Create QR for event-002 but scan at event-001
         const qrPayload = createValidQRPayload('guest-001', 'event-002');
 
-        const result = await service.verifyQRScan(qrPayload, 'event-001');
+        const result = await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         expect(result.status).toBe(VerificationStatus.RED);
         expect(result.message).toBe('QR code bukan untuk event ini');
@@ -244,7 +245,7 @@ describe('CheckInService', () => {
 
         vi.mocked(repository.findGuestById).mockResolvedValue(null);
 
-        const result = await service.verifyQRScan(qrPayload, 'event-001');
+        const result = await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         expect(result.status).toBe(VerificationStatus.RED);
         expect(result.message).toBe('Tamu tidak ditemukan');
@@ -257,7 +258,7 @@ describe('CheckInService', () => {
           'b1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2';
         const qrPayload = createValidQRPayload('guest-001', 'event-001', wrongKey);
 
-        const result = await service.verifyQRScan(qrPayload, 'event-001');
+        const result = await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         expect(result.status).toBe(VerificationStatus.RED);
         expect(result.message).toBe('QR code tidak valid');
@@ -274,7 +275,7 @@ describe('CheckInService', () => {
         vi.mocked(redis.set).mockResolvedValue(null); // SET NX fails (key exists)
         vi.mocked(redis.get).mockResolvedValue(previousTimestamp);
 
-        const result = await service.verifyQRScan(qrPayload, 'event-001');
+        const result = await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         expect(result.status).toBe(VerificationStatus.YELLOW);
         expect(result.guest_name).toBe('John Doe');
@@ -291,7 +292,7 @@ describe('CheckInService', () => {
         vi.mocked(redis.set).mockResolvedValue(null); // Already checked in
         vi.mocked(redis.get).mockResolvedValue('2024-06-15T10:30:00.000Z');
 
-        await service.verifyQRScan(qrPayload, 'event-001');
+        await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         // Should NOT create a new check-in record
         expect(repository.createCheckIn).not.toHaveBeenCalled();
@@ -314,6 +315,7 @@ describe('CheckInService', () => {
         });
 
         const result1 = await service.verifyQRScan(
+          'tenant-001',
           qrPayload,
           'event-001',
           'scanner-001'
@@ -325,6 +327,7 @@ describe('CheckInService', () => {
         vi.mocked(redis.get).mockResolvedValue(new Date().toISOString());
 
         const result2 = await service.verifyQRScan(
+          'tenant-001',
           qrPayload,
           'event-001',
           'scanner-002'
@@ -349,16 +352,16 @@ describe('CheckInService', () => {
 
         // First attempt: SET NX succeeds
         vi.mocked(redis.set).mockResolvedValueOnce('OK');
-        await service.verifyQRScan(qrPayload, 'event-001');
+        await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         // Second attempt: SET NX fails
         vi.mocked(redis.set).mockResolvedValueOnce(null);
         vi.mocked(redis.get).mockResolvedValue(new Date().toISOString());
-        await service.verifyQRScan(qrPayload, 'event-001');
+        await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         // Third attempt: SET NX fails
         vi.mocked(redis.set).mockResolvedValueOnce(null);
-        await service.verifyQRScan(qrPayload, 'event-001');
+        await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         // Only one createCheckIn call should have been made
         expect(repository.createCheckIn).toHaveBeenCalledTimes(1);
@@ -380,7 +383,7 @@ describe('CheckInService', () => {
           checked_in_at: new Date(),
         });
 
-        await service.verifyQRScan(qrPayload, 'event-001', 'device-abc');
+        await service.verifyQRScan('tenant-001', qrPayload, 'event-001', 'device-abc');
 
         expect(repository.createCheckIn).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -403,7 +406,7 @@ describe('CheckInService', () => {
           checked_in_at: new Date(),
         });
 
-        await service.verifyQRScan(qrPayload, 'event-001');
+        await service.verifyQRScan('tenant-001', qrPayload, 'event-001');
 
         expect(repository.createCheckIn).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -477,7 +480,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.findEventById).mockResolvedValue({ id: 'event-001', tenant_id: 'tenant-001' });
       vi.mocked(repository.searchGuestsByName).mockResolvedValue(mockResults);
 
-      const result = await service.searchGuests('event-001', 'Joh');
+      const result = await service.searchGuests('tenant-001', 'event-001', 'Joh');
 
       expect(isServiceError(result)).toBe(false);
       if (!isServiceError(result)) {
@@ -488,7 +491,7 @@ describe('CheckInService', () => {
     });
 
     it('should reject query with less than 3 characters', async () => {
-      const result = await service.searchGuests('event-001', 'Jo');
+      const result = await service.searchGuests('tenant-001', 'event-001', 'Jo');
 
       expect(isServiceError(result)).toBe(true);
       if (isServiceError(result)) {
@@ -500,7 +503,7 @@ describe('CheckInService', () => {
     it('should return error if event not found', async () => {
       vi.mocked(repository.findEventById).mockResolvedValue(null);
 
-      const result = await service.searchGuests('nonexistent-event', 'John');
+      const result = await service.searchGuests('tenant-001', 'nonexistent-event', 'John');
 
       expect(isServiceError(result)).toBe(true);
       if (isServiceError(result)) {
@@ -512,7 +515,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.findEventById).mockResolvedValue({ id: 'event-001', tenant_id: 'tenant-001' });
       vi.mocked(repository.searchGuestsByName).mockResolvedValue([]);
 
-      await service.searchGuests('event-001', 'John');
+      await service.searchGuests('tenant-001', 'event-001', 'John');
 
       expect(repository.searchGuestsByName).toHaveBeenCalledWith(
         'event-001',
@@ -530,7 +533,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.findEventById).mockResolvedValue({ id: 'event-001', tenant_id: 'tenant-001' });
       vi.mocked(repository.searchGuestsByName).mockResolvedValue(mockResults);
 
-      const result = await service.searchGuests('event-001', 'Doe');
+      const result = await service.searchGuests('tenant-001', 'event-001', 'Doe');
 
       expect(isServiceError(result)).toBe(false);
       if (!isServiceError(result)) {
@@ -545,7 +548,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.findEventById).mockResolvedValue({ id: 'event-001', tenant_id: 'tenant-001' });
       vi.mocked(repository.searchGuestsByName).mockResolvedValue([]);
 
-      const result = await service.searchGuests('event-001', 'XYZ');
+      const result = await service.searchGuests('tenant-001', 'event-001', 'XYZ');
 
       expect(isServiceError(result)).toBe(false);
       if (!isServiceError(result)) {
@@ -570,7 +573,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.findCheckInByGuestId).mockResolvedValue(null);
       vi.mocked(repository.createCheckIn).mockResolvedValue(mockCheckIn);
 
-      const result = await service.manualCheckIn('guest-001', 'event-001');
+      const result = await service.manualCheckIn('tenant-001', 'guest-001', 'event-001');
 
       expect(isServiceError(result)).toBe(false);
       if (!isServiceError(result)) {
@@ -593,7 +596,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
       vi.mocked(repository.findCheckInByGuestId).mockResolvedValue(existingCheckIn);
 
-      const result = await service.manualCheckIn('guest-001', 'event-001');
+      const result = await service.manualCheckIn('tenant-001', 'guest-001', 'event-001');
 
       expect(isServiceError(result)).toBe(true);
       if (isServiceError(result)) {
@@ -605,7 +608,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.findEventById).mockResolvedValue({ id: 'event-001', tenant_id: 'tenant-001' });
       vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(null);
 
-      const result = await service.manualCheckIn('nonexistent', 'event-001');
+      const result = await service.manualCheckIn('tenant-001', 'nonexistent', 'event-001');
 
       expect(isServiceError(result)).toBe(true);
       if (isServiceError(result)) {
@@ -616,7 +619,7 @@ describe('CheckInService', () => {
     it('should return error if event not found', async () => {
       vi.mocked(repository.findEventById).mockResolvedValue(null);
 
-      const result = await service.manualCheckIn('guest-001', 'nonexistent-event');
+      const result = await service.manualCheckIn('tenant-001', 'guest-001', 'nonexistent-event');
 
       expect(isServiceError(result)).toBe(true);
       if (isServiceError(result)) {
@@ -639,7 +642,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.findCheckInByGuestId).mockResolvedValue(null);
       vi.mocked(repository.createCheckIn).mockResolvedValue(mockCheckIn);
 
-      await service.manualCheckIn('guest-001', 'event-001');
+      await service.manualCheckIn('tenant-001', 'guest-001', 'event-001');
 
       expect(broadcaster.broadcast).toHaveBeenCalledWith('event-001', {
         event_type: 'guest_checked_in',
@@ -667,7 +670,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.findGuestByIdAndEvent).mockResolvedValue(mockGuest);
       vi.mocked(repository.findCheckInByGuestId).mockResolvedValue(existingCheckIn);
 
-      await service.manualCheckIn('guest-001', 'event-001');
+      await service.manualCheckIn('tenant-001', 'guest-001', 'event-001');
 
       expect(broadcaster.broadcast).not.toHaveBeenCalled();
     });
@@ -687,7 +690,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.findCheckInByGuestId).mockResolvedValue(null);
       vi.mocked(repository.createCheckIn).mockResolvedValue(mockCheckIn);
 
-      await service.manualCheckIn('guest-001', 'event-001', 'scanner-001');
+      await service.manualCheckIn('tenant-001', 'guest-001', 'event-001', 'scanner-001');
 
       expect(repository.createCheckIn).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -718,7 +721,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.createGoShowGuest).mockResolvedValue(mockGuest);
       vi.mocked(repository.createCheckIn).mockResolvedValue(mockCheckIn);
 
-      const result = await service.registerGoShow('Walk-in Guest', 'event-001');
+      const result = await service.registerGoShow('tenant-001', 'Walk-in Guest', 'event-001');
 
       expect(isServiceError(result)).toBe(false);
       if (!isServiceError(result)) {
@@ -746,7 +749,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.createGoShowGuest).mockResolvedValue(mockGuest);
       vi.mocked(repository.createCheckIn).mockResolvedValue(mockCheckIn);
 
-      await service.registerGoShow('New Guest', 'event-001');
+      await service.registerGoShow('tenant-001', 'New Guest', 'event-001');
 
       expect(repository.createGoShowGuest).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -777,7 +780,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.createGoShowGuest).mockResolvedValue(mockGuest);
       vi.mocked(repository.createCheckIn).mockResolvedValue(mockCheckIn);
 
-      await service.registerGoShow('New Guest', 'event-001');
+      await service.registerGoShow('tenant-001', 'New Guest', 'event-001');
 
       expect(repository.createCheckIn).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -810,7 +813,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.createGoShowGuest).mockResolvedValue(mockGuest);
       vi.mocked(repository.createCheckIn).mockResolvedValue(mockCheckIn);
 
-      await service.registerGoShow('Walk-in Guest', 'event-001');
+      await service.registerGoShow('tenant-001', 'Walk-in Guest', 'event-001');
 
       expect(broadcaster.broadcast).toHaveBeenCalledWith('event-001', {
         event_type: 'go_show_added',
@@ -825,7 +828,7 @@ describe('CheckInService', () => {
     });
 
     it('should return error if name is empty', async () => {
-      const result = await service.registerGoShow('', 'event-001');
+      const result = await service.registerGoShow('tenant-001', '', 'event-001');
 
       expect(isServiceError(result)).toBe(true);
       if (isServiceError(result)) {
@@ -835,7 +838,7 @@ describe('CheckInService', () => {
     });
 
     it('should return error if name is only whitespace', async () => {
-      const result = await service.registerGoShow('   ', 'event-001');
+      const result = await service.registerGoShow('tenant-001', '   ', 'event-001');
 
       expect(isServiceError(result)).toBe(true);
       if (isServiceError(result)) {
@@ -846,7 +849,7 @@ describe('CheckInService', () => {
     it('should return error if event not found', async () => {
       vi.mocked(repository.findEventById).mockResolvedValue(null);
 
-      const result = await service.registerGoShow('Walk-in Guest', 'nonexistent-event');
+      const result = await service.registerGoShow('tenant-001', 'Walk-in Guest', 'nonexistent-event');
 
       expect(isServiceError(result)).toBe(true);
       if (isServiceError(result)) {
@@ -873,7 +876,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.createGoShowGuest).mockResolvedValue(mockGuest);
       vi.mocked(repository.createCheckIn).mockResolvedValue(mockCheckIn);
 
-      await service.registerGoShow('  Walk-in Guest  ', 'event-001');
+      await service.registerGoShow('tenant-001', '  Walk-in Guest  ', 'event-001');
 
       expect(repository.createGoShowGuest).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -901,7 +904,7 @@ describe('CheckInService', () => {
       vi.mocked(repository.createGoShowGuest).mockResolvedValue(mockGuest);
       vi.mocked(repository.createCheckIn).mockResolvedValue(mockCheckIn);
 
-      await service.registerGoShow('New Guest', 'event-001', 'scanner-001');
+      await service.registerGoShow('tenant-001', 'New Guest', 'event-001', 'scanner-001');
 
       expect(repository.createCheckIn).toHaveBeenCalledWith(
         expect.objectContaining({

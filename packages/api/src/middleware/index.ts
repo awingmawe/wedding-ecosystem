@@ -1,4 +1,5 @@
 export {
+  createAuthMiddleware,
   createTenantIsolationMiddleware,
   tenantFilter,
   validateTenantOwnership,
@@ -23,11 +24,7 @@ export {
   InMemoryRateLimiterStore,
   RATE_LIMITER_CONSTANTS,
 } from './rate-limiter.middleware';
-export type {
-  RateLimiterConfig,
-  RateLimiterStore,
-  RedisClient,
-} from './rate-limiter.middleware';
+export type { RateLimiterConfig, RateLimiterStore, RedisClient } from './rate-limiter.middleware';
 
 export {
   createCORSMiddleware,
@@ -55,3 +52,5 @@ export type {
   MulterFile,
   MulterFileFilterCallback,
 } from './media-upload.middleware';
+
+export { validate } from './validate';

@@ -1,29 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
+import jwt from 'jsonwebtoken';
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { ErrorCode } from '@wedding/shared';
 import {
-  createTenantIsolationMiddleware,
+  createAuthMiddleware,
   tenantFilter,
   validateTenantOwnership,
   AuthenticatedRequest,
 } from './tenant-isolation.middleware';
-import { AuthService, TokenPayload, AuthServiceError } from '../services/auth.service';
+
+// --- Constants ---
+
+const TEST_JWT_SECRET = 'property-test-secret-key-32chars!';
 
 // --- Arbitraries ---
 
 /** Generates a non-empty tenant_id string (UUID-like or alphanumeric) */
 const arbTenantId = fc.string({ minLength: 1, maxLength: 64 }).filter((s) => s.trim().length > 0);
-
-/** Generates a valid TokenPayload with a given tenant_id */
-function arbTokenPayload(tenantId: string): fc.Arbitrary<TokenPayload> {
-  return fc.record({
-    sub: fc.uuid(),
-    tenant_id: fc.constant(tenantId),
-    role: fc.constantFrom('admin', 'client', 'wo', 'scanner'),
-    email: fc.emailAddress(),
-  });
-}
 
 // --- Test Helpers ---
 
@@ -51,10 +45,8 @@ function createMockReply() {
   return reply as unknown as FastifyReply & { statusCode: number; body: unknown };
 }
 
-function createMockAuthService(verifyResult: TokenPayload | AuthServiceError): AuthService {
-  return {
-    verifyAccessToken: () => verifyResult,
-  } as unknown as AuthService;
+function createValidToken(payload: object): string {
+  return jwt.sign(payload, TEST_JWT_SECRET, { expiresIn: '15m' });
 }
 
 // --- Property Tests ---
@@ -69,9 +61,9 @@ describe('Property 1: Tenant Data Isolation', () => {
   it('tenantFilter always returns a filter scoped to the authenticated tenant_id', () => {
     fc.assert(
       fc.property(arbTenantId, (tenantId) => {
-        const request = createMockRequest('Bearer token') as AuthenticatedRequest;
-        request.tenantContext = {
-          user_id: 'user-1',
+        const request = createMockRequest('Bearer token') as any;
+        request.user = {
+          id: 'user-1',
           tenant_id: tenantId,
           role: 'client',
           email: 'test@test.com',
@@ -98,9 +90,9 @@ describe('Property 1: Tenant Data Isolation', () => {
         arbTenantId,
         fc.array(arbTenantId, { minLength: 1, maxLength: 20 }),
         (authenticatedTenantId, resourceTenantIds) => {
-          const request = createMockRequest('Bearer token') as AuthenticatedRequest;
-          request.tenantContext = {
-            user_id: 'user-1',
+          const request = createMockRequest('Bearer token') as any;
+          request.user = {
+            id: 'user-1',
             tenant_id: authenticatedTenantId,
             role: 'client',
             email: 'test@test.com',
@@ -123,27 +115,26 @@ describe('Property 1: Tenant Data Isolation', () => {
   /**
    * **Validates: Requirements 1.2**
    *
-   * The middleware attaches the correct tenant context from the JWT payload,
+   * The middleware attaches the correct user context from the JWT payload,
    * ensuring downstream queries are scoped to the correct tenant.
    */
-  it('middleware attaches correct tenant context for any valid tenant_id', () => {
+  it('middleware attaches correct user context for any valid tenant_id', () => {
     fc.assert(
       fc.property(arbTenantId, (tenantId) => {
-        const payload: TokenPayload = {
+        const token = createValidToken({
           sub: 'user-123',
           tenant_id: tenantId,
           role: 'client',
           email: 'user@example.com',
-        };
-        const authService = createMockAuthService(payload);
-        const middleware = createTenantIsolationMiddleware(authService);
-        const request = createMockRequest('Bearer valid-token');
+        });
+        const middleware = createAuthMiddleware(TEST_JWT_SECRET);
+        const request = createMockRequest(`Bearer ${token}`);
         const reply = createMockReply();
 
         middleware(request, reply);
 
-        const authenticatedRequest = request as AuthenticatedRequest;
-        expect(authenticatedRequest.tenantContext.tenant_id).toBe(tenantId);
+        const user = (request as any).user;
+        expect(user.tenant_id).toBe(tenantId);
         // Reply should not have been called (no error)
         expect(reply.statusCode).toBe(0);
       }),
@@ -161,24 +152,20 @@ describe('Property 19: Cross-Tenant Access Rejection', () => {
    */
   it('cross-tenant access is always rejected for distinct tenants', () => {
     fc.assert(
-      fc.property(
-        arbTenantId,
-        arbTenantId,
-        (tenantA, tenantB) => {
-          fc.pre(tenantA !== tenantB);
+      fc.property(arbTenantId, arbTenantId, (tenantA, tenantB) => {
+        fc.pre(tenantA !== tenantB);
 
-          const request = createMockRequest('Bearer token') as AuthenticatedRequest;
-          request.tenantContext = {
-            user_id: 'user-1',
-            tenant_id: tenantA,
-            role: 'client',
-            email: 'test@test.com',
-          };
+        const request = createMockRequest('Bearer token') as any;
+        request.user = {
+          id: 'user-1',
+          tenant_id: tenantA,
+          role: 'client',
+          email: 'test@test.com',
+        };
 
-          const result = validateTenantOwnership(request, tenantB);
-          expect(result).toBe(false);
-        }
-      ),
+        const result = validateTenantOwnership(request, tenantB);
+        expect(result).toBe(false);
+      }),
       { numRuns: 200 }
     );
   });
@@ -196,15 +183,14 @@ describe('Property 19: Cross-Tenant Access Rejection', () => {
         fc.constantFrom('admin', 'client', 'wo', 'scanner'),
         fc.emailAddress(),
         (userId, role, email) => {
-          const payload: TokenPayload = {
+          const token = createValidToken({
             sub: userId,
             tenant_id: '', // empty tenant_id
             role,
             email,
-          };
-          const authService = createMockAuthService(payload);
-          const middleware = createTenantIsolationMiddleware(authService);
-          const request = createMockRequest('Bearer valid-token');
+          });
+          const middleware = createAuthMiddleware(TEST_JWT_SECRET);
+          const request = createMockRequest(`Bearer ${token}`);
           const reply = createMockReply();
 
           middleware(request, reply);
@@ -222,14 +208,14 @@ describe('Property 19: Cross-Tenant Access Rejection', () => {
   /**
    * **Validates: Requirements 1.3**
    *
-   * validateTenantOwnership returns false when tenant context is not available,
+   * validateTenantOwnership returns false when user context is not available,
    * ensuring no access is granted without proper authentication.
    */
-  it('validateTenantOwnership rejects access when tenant context is missing', () => {
+  it('validateTenantOwnership rejects access when user context is missing', () => {
     fc.assert(
       fc.property(arbTenantId, (resourceTenantId) => {
         const request = createMockRequest('Bearer token');
-        // No tenantContext attached — simulates unauthenticated state
+        // No user attached — simulates unauthenticated state
 
         const result = validateTenantOwnership(request, resourceTenantId);
         expect(result).toBe(false);
@@ -241,26 +227,14 @@ describe('Property 19: Cross-Tenant Access Rejection', () => {
   /**
    * **Validates: Requirements 1.3**
    *
-   * The middleware rejects requests without valid tenant context:
-   * missing Authorization header, non-Bearer prefix, or invalid token.
+   * The middleware rejects all requests without valid authentication.
    */
   it('middleware rejects all requests without valid authentication', () => {
-    const invalidHeaders = [
-      undefined,
-      '',
-      'Basic abc123',
-      'Token xyz',
-      'bearer lowercase',
-    ];
+    const invalidHeaders = [undefined, '', 'Basic abc123', 'Token xyz', 'bearer lowercase'];
+
+    const middleware = createAuthMiddleware(TEST_JWT_SECRET);
 
     for (const header of invalidHeaders) {
-      const authService = createMockAuthService({
-        sub: 'user-1',
-        tenant_id: 'tenant-1',
-        role: 'client',
-        email: 'test@test.com',
-      });
-      const middleware = createTenantIsolationMiddleware(authService);
       const request = createMockRequest(header);
       const reply = createMockReply();
 

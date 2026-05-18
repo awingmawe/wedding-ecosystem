@@ -16,10 +16,11 @@ apps/
 packages/
 ├── api/              → Fastify REST + WebSocket server (port 4000)
 │   └── src/
-│       ├── routes/   → auth, guests, events, checkin, rsvp, cms, scanner, messages, notifications, invitations, health
-│       ├── services/ → Business logic (11 services)
-│       ├── middleware/ → CORS, rate-limit, RBAC, tenant-isolation, encryption, input-validation
-│       └── plugins/  → audit-logger, response-cache, security-headers
+│       ├── routes/      → Thin HTTP adapters (auth, guests, events, checkin, rsvp, cms, scanner, messages, notifications, invitations, health)
+│       ├── services/    → Business logic (11 services; no direct Prisma calls)
+│       ├── repositories/ → Data-access layer — Prisma adapters, all queries tenant-scoped (guest, checkin)
+│       ├── middleware/  → CORS, rate-limit, RBAC, tenant-isolation, encryption, input-validation
+│       └── plugins/     → audit-logger, response-cache, security-headers
 ├── db/               → Prisma 7 schema (12 models, 10 enums), migrations, client factory
 ├── shared/           → Zod schemas, TypeScript interfaces, enums, error codes, sanitization
 └── realtime/         → Socket.io 4.8 server, room-based per event, JWT auth middleware
@@ -29,7 +30,7 @@ packages/
 
 | Task | Start Here |
 |------|-----------|
-| Add API endpoint | `packages/api/src/routes/` → create route, add service in `services/` |
+| Add API endpoint | `packages/api/src/routes/` (thin adapter) → `services/` (business logic) → `repositories/` (data access) |
 | Add database model | `packages/db/prisma/schema.prisma` → run `prisma migrate dev` |
 | Add shared type/validation | `packages/shared/src/types/` (enums, interfaces, validation) |
 | Add invitation section | `apps/invitation/src/components/sections/` + register in `section-rendering.ts` |
@@ -96,3 +97,54 @@ For deeper information, see `.agents/summary/`:
 <!-- This section is for human and agent-maintained operational knowledge.
      Add repo-specific conventions, gotchas, and workflow rules here.
      This section is preserved exactly as-is when re-running codebase-summary. -->
+
+### Post-Change File Audit Protocol (MANDATORY)
+
+After **every** code change — no matter how small — the agent MUST:
+
+1. **Scan for impacted files.** Check all of the following that may reference what was changed:
+   - `AGENTS.md` and `GEMINI.md` (directory maps, entry points, gotchas)
+   - `.agents/summary/*.md` (architecture, components, interfaces, testing, review_notes)
+   - `README.md` (feature list, API reference sections)
+   - `packages/shared/src/types/` (if types/enums changed)
+   - Postman collection (if an API endpoint was added, removed, or its shape changed)
+
+2. **Classify each file** as one of:
+   - 🔴 **Must update** — contains information that is now incorrect (wrong layer diagram, missing endpoint, stale test count, wrong CSV headers, etc.)
+   - 🟡 **Should update** — contains information that is now incomplete or misleading
+   - ✅ **No update needed** — high-level or unrelated content; still accurate
+
+3. **Present the audit to the user** in a table like this before touching anything:
+
+   | File | Status | What needs changing | Reason |
+   |------|--------|--------------------|---------| 
+   | `AGENTS.md` | 🔴 Must | Add `repositories/` to directory map | New layer was added |
+   | `interfaces.md` | 🔴 Must | Add `DELETE /guests/:id` | Endpoint was missing |
+   | `README.md` | ✅ None | — | High-level, unaffected |
+
+4. **Ask the user explicitly**: *"Do you want me to update these files? (you can say yes to all, or list which ones to skip)"*
+
+5. **Only update files the user approves.** Never silently edit documentation or config files without this step.
+
+**Skip the audit only when**: the change is a pure refactor with no observable API, schema, or architectural difference (e.g., renaming a local variable, fixing a typo in a code comment).
+
+---
+
+### Repository Pattern (Guest domain — June 2026)
+
+The `Guest` domain has been migrated to a **3-layer architecture**: thin route → service → repository.
+
+- **Routes** (`routes/guests.ts`) must NOT call Prisma directly. They delegate entirely to `GuestService` and `GuestImportService`.
+- **Services** (`guest.service.ts`, `guest-import.service.ts`) contain all business logic: slug generation, QR encryption, deduplication. No Prisma imports.
+- **Repository** (`repositories/guest.repository.ts`) is the only layer that talks to Prisma. Every method receives `tenant_id` and must include it in the `where` clause — no exceptions.
+- The repository implements the `GuestRepository` interface defined at the top of `guest.service.ts`. Mock that interface in service tests; mock `PrismaClient` in repository tests.
+
+### Critical Gotchas
+
+| Gotcha | Detail |
+|--------|--------|
+| **CSV import headers** | `GuestImportService` expects Bahasa Indonesia column names: `nama`, `grup`, `telepon`, `email`. English names (`name`, `group`) will silently skip rows. |
+| **QR payload format** | Encrypted as `iv:ciphertext` (AES-256-CBC). Requires `AES_ENCRYPTION_KEY` env var (32 bytes). Missing key → runtime crash on QR generation. |
+| **`DELETE /guests/:id`** | Exists in the route file and is tenant-scoped. Was missing from Postman collection until June 2026 — now present. |
+| **`searchGuestsByName`** | Minimum 2 characters enforced in the route. Below that, the route returns 400, not an empty array. |
+| **PrismaClient import** | Always import `PrismaClient` from `@wedding/db`, never from `@prisma/client` directly — the latter is not exported from the package root. |

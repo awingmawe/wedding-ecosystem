@@ -31,6 +31,8 @@ function createMockRepository(): GuestRepository {
     checkSlugExists: vi.fn(),
     checkQRPayloadExists: vi.fn(),
     findEventById: vi.fn(),
+    findGuestNamesByEvent: vi.fn(),
+    searchGuestsByName: vi.fn(),
   };
 }
 
@@ -387,6 +389,7 @@ describe('GuestService', () => {
             plus_one_count: 1,
             phone: '+6281234567890',
             email: 'john@example.com',
+            invitation_url: '/wedding?to=john-doe',
             delivery_status: DeliveryStatus.NOT_SENT,
             rsvp_status: 'confirmed',
             check_in_status: false,
@@ -594,6 +597,80 @@ describe('GuestService', () => {
       expect(slug).toBe('john-doe');
       // Should not check repository since slug matches
       expect(repository.checkSlugExists).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('searchGuests', () => {
+    it('should return matching guests for a valid query', async () => {
+      const mockGuests = [createMockGuest(), createMockGuest({ id: 'guest-002', name: 'John Smith', slug: 'john-smith' })];
+
+      vi.mocked(repository.findEventById).mockResolvedValue({ id: 'event-001', slug: 'wedding' });
+      vi.mocked(repository.searchGuestsByName).mockResolvedValue(mockGuests);
+
+      const result = await service.searchGuests('event-001', 'tenant-001', 'john');
+
+      expect(Array.isArray(result)).toBe(true);
+      if (Array.isArray(result)) {
+        expect(result).toHaveLength(2);
+        expect(result[0].name).toBe('John Doe');
+      }
+
+      expect(repository.searchGuestsByName).toHaveBeenCalledWith(
+        'john',
+        'event-001',
+        'tenant-001',
+        10 // MAX_SEARCH_RESULTS
+      );
+    });
+
+    it('should return validation error if query is less than 3 characters', async () => {
+      const result = await service.searchGuests('event-001', 'tenant-001', 'jo');
+
+      expect(!Array.isArray(result) && isGuestError(result)).toBe(true);
+      if (!Array.isArray(result) && isGuestError(result)) {
+        expect(result.code).toBe(ErrorCode.VALIDATION_FAILED);
+        expect(result.message).toContain('3');
+      }
+      // Should not touch the DB at all
+      expect(repository.searchGuestsByName).not.toHaveBeenCalled();
+    });
+
+    it('should return error if event not found (tenant isolation)', async () => {
+      vi.mocked(repository.findEventById).mockResolvedValue(null);
+
+      const result = await service.searchGuests('wrong-event', 'tenant-001', 'budi');
+
+      expect(!Array.isArray(result) && isGuestError(result)).toBe(true);
+      if (!Array.isArray(result) && isGuestError(result)) {
+        expect(result.code).toBe(ErrorCode.NOT_FOUND);
+      }
+      // No DB search if event check fails
+      expect(repository.searchGuestsByName).not.toHaveBeenCalled();
+    });
+
+    it('should return empty array when no guests match', async () => {
+      vi.mocked(repository.findEventById).mockResolvedValue({ id: 'event-001', slug: 'wedding' });
+      vi.mocked(repository.searchGuestsByName).mockResolvedValue([]);
+
+      const result = await service.searchGuests('event-001', 'tenant-001', 'xyz');
+
+      expect(Array.isArray(result)).toBe(true);
+      if (Array.isArray(result)) {
+        expect(result).toHaveLength(0);
+      }
+    });
+
+    it('should enforce the 3-character boundary exactly', async () => {
+      vi.mocked(repository.findEventById).mockResolvedValue({ id: 'event-001', slug: 'wedding' });
+      vi.mocked(repository.searchGuestsByName).mockResolvedValue([]);
+
+      // exactly 3 chars — valid
+      const resultValid = await service.searchGuests('event-001', 'tenant-001', 'bud');
+      expect(Array.isArray(resultValid)).toBe(true);
+
+      // 2 chars — error
+      const resultInvalid = await service.searchGuests('event-001', 'tenant-001', 'bu');
+      expect(!Array.isArray(resultInvalid) && isGuestError(resultInvalid)).toBe(true);
     });
   });
 

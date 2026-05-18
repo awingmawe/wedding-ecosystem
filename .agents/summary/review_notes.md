@@ -39,7 +39,8 @@
 
 | Area | Gap | Impact | Recommendation |
 |------|-----|--------|----------------|
-| **Testing patterns** | No dedicated testing documentation | Medium | Document test file conventions, property-based test patterns, mock strategies |
+| ~~**Testing patterns**~~ | ~~No dedicated testing documentation~~ | ✅ Resolved | `testing.md` added with full mock strategies, property-based patterns, 2-level mocking guide |
+| **Repository migration** | Only Guest and CheckIn domains have `*.repository.ts` files. CMS, RSVP, Events still call Prisma from service layer. | Medium | Migrate remaining domains to full route → service → repository pattern for consistency |
 | **Error handling patterns** | Error codes listed but no flow for error propagation | Low | Document how errors flow from service → route → client |
 | **Theme system** | Theme presets and customization logic not detailed | Low | Document the 5 preset themes and hex customization flow |
 | **Media upload pipeline** | Virus scanning and R2 upload flow not in workflows | Low | Add workflow diagram for media upload |

@@ -1,9 +1,8 @@
 import Fastify from 'fastify';
-import jwt from 'jsonwebtoken';
 import { createProductionPrismaClient } from '@wedding/db';
 import {
   createRealtimeServer,
-  createAuthMiddleware,
+  createAuthMiddleware as createWsAuthMiddleware,
   registerRoomAuthorization,
   type RealtimeServer,
   type EventAuthRepository,
@@ -20,6 +19,7 @@ import { scannerRoutes } from './routes/scanner';
 import { messageRoutes } from './routes/messages';
 import { healthRoutes } from './routes/health';
 import {
+  createAuthMiddleware,
   createCORSMiddleware,
   createDefaultCORSConfig,
   createRateLimiterMiddleware,
@@ -123,7 +123,8 @@ app.addHook('preHandler', async (request, reply) => {
   await rateLimiterMiddleware(request, reply);
 });
 
-// --- Auth middleware decorator ---
+// --- Auth Middleware (Single Seam) ---
+// All auth logic lives in createAuthMiddleware — no other auth implementation exists.
 declare module 'fastify' {
   interface FastifyRequest {
     user?: {
@@ -135,52 +136,10 @@ declare module 'fastify' {
   }
 }
 
-/**
- * Authentication decorator (Req 2.1)
- * Verifies JWT access token and attaches user context to request.
- * Used by protected routes via onRequest hook.
- */
-app.decorate('authenticate', async function (request: any, reply: any) {
-  const authHeader = request.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    reply.status(401).send({
-      success: false,
-      error: { code: 'AUTH_2002', message: 'Token autentikasi diperlukan.' },
-    });
-    return;
-  }
+const authenticate = createAuthMiddleware(JWT_SECRET);
 
-  const token = authHeader.slice(7);
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as {
-      sub: string;
-      tenant_id: string;
-      role: string;
-      email: string;
-    };
-
-    // Tenant isolation: attach tenant context (Req 1.2)
-    request.user = {
-      id: decoded.sub,
-      tenant_id: decoded.tenant_id,
-      role: decoded.role,
-      email: decoded.email,
-    };
-  } catch (err: any) {
-    if (err.name === 'TokenExpiredError') {
-      reply.status(401).send({
-        success: false,
-        error: { code: 'AUTH_2002', message: 'Access token telah kedaluwarsa.' },
-      });
-    } else {
-      reply.status(401).send({
-        success: false,
-        error: { code: 'AUTH_2003', message: 'Token tidak valid.' },
-      });
-    }
-    return;
-  }
-});
+// Decorate app so routes can access via app.authenticate (backward compatible)
+app.decorate('authenticate', authenticate);
 
 // --- WebSocket / Realtime Server ---
 let realtime: RealtimeServer | null = null;
@@ -262,11 +221,11 @@ async function start() {
 
     // --- WebSocket Authentication Middleware (Req 13.6) ---
     // Validates JWT token on handshake — rejects unauthenticated connections
-    const authMiddleware = createAuthMiddleware({
+    const wsAuthMiddleware = createWsAuthMiddleware({
       jwtSecret: JWT_SECRET,
       eventAuthRepository,
     });
-    realtime.io.use(authMiddleware);
+    realtime.io.use(wsAuthMiddleware);
 
     // --- WebSocket Room Authorization (Req 13.7) ---
     // Enforces tenant-scoped room access on join_event
