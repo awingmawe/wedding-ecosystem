@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest } from 'fastify';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@wedding/db';
 
 interface MessageRouteOptions extends FastifyPluginOptions {
   prisma: PrismaClient;

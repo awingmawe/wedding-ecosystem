@@ -12,7 +12,7 @@
  */
 
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest } from 'fastify';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@wedding/db';
 import type { RealtimeServer } from '@wedding/realtime';
 import {
   ErrorCode,
@@ -26,8 +26,6 @@ import {
   RealtimeCheckInBroadcaster,
   IoRedisCheckInClient,
   NoOpRedisCheckInClient,
-  getTenantEvent,
-  replyEventNotFound,
 } from '../repositories';
 import { getCacheClient } from '../config/redis';
 import { validate } from '../middleware/validate';
@@ -71,12 +69,9 @@ export async function checkinRoutes(app: FastifyInstance, opts: CheckInRouteOpti
 
     const { qr_payload, event_id, scanner_device_id } = body;
 
-    // Verify event belongs to tenant
-    const event = await getTenantEvent(prisma, event_id, user.tenant_id);
-    if (!event) return replyEventNotFound(reply);
-
     // Delegate to service — handles QR decryption, atomic duplicate detection, DB write, broadcast
     const result = await checkInService.verifyQRScan(
+      user.tenant_id,
       qr_payload,
       event_id,
       scanner_device_id || null
@@ -104,12 +99,9 @@ export async function checkinRoutes(app: FastifyInstance, opts: CheckInRouteOpti
       scanner_device_id?: string;
     };
 
-    // Verify event belongs to tenant
-    const event = await getTenantEvent(prisma, event_id, user.tenant_id);
-    if (!event) return replyEventNotFound(reply);
-
     // Delegate to service — handles duplicate check, DB write, broadcast
     const result = await checkInService.manualCheckIn(
+      user.tenant_id,
       guest_id,
       event_id,
       scanner_device_id || null
@@ -138,12 +130,13 @@ export async function checkinRoutes(app: FastifyInstance, opts: CheckInRouteOpti
 
     const { name, event_id, scanner_device_id } = body;
 
-    // Verify event belongs to tenant
-    const event = await getTenantEvent(prisma, event_id, user.tenant_id);
-    if (!event) return replyEventNotFound(reply);
-
     // Delegate to service — handles guest creation, check-in, broadcast
-    const result = await checkInService.registerGoShow(name, event_id, scanner_device_id || null);
+    const result = await checkInService.registerGoShow(
+      user.tenant_id,
+      name,
+      event_id,
+      scanner_device_id || null
+    );
 
     if (isServiceError(result)) {
       return reply.status(400).send({
@@ -180,52 +173,18 @@ export async function checkinRoutes(app: FastifyInstance, opts: CheckInRouteOpti
       });
     }
 
-    const results: Array<{
-      guest_id: string;
-      status: 'synced' | 'duplicate' | 'error';
-      message?: string;
-    }> = [];
-
-    for (const record of records) {
-      // Verify event belongs to tenant
-      const event = await prisma.event.findFirst({
-        where: { id: record.event_id, tenant_id: user.tenant_id },
-      });
-
-      if (!event) {
-        results.push({
-          guest_id: record.guest_id,
-          status: 'error',
-          message: 'Event tidak ditemukan',
-        });
-        continue;
-      }
-
-      // Use manual check-in for sync (handles duplicate detection + broadcast)
-      const syncResult = await checkInService.manualCheckIn(
-        record.guest_id,
-        record.event_id,
-        record.scanner_device_id || null
-      );
-
-      if (isServiceError(syncResult)) {
-        if (syncResult.code === ErrorCode.ALREADY_CHECKED_IN) {
-          results.push({ guest_id: record.guest_id, status: 'duplicate' });
-        } else {
-          results.push({ guest_id: record.guest_id, status: 'error', message: syncResult.message });
-        }
-      } else {
-        results.push({ guest_id: record.guest_id, status: 'synced' });
-      }
-    }
+    const syncResult = await checkInService.syncOfflineRecords(
+      user.tenant_id,
+      records
+    );
 
     return reply.send({
       success: true,
-      total: records.length,
-      synced: results.filter((r) => r.status === 'synced').length,
-      duplicates: results.filter((r) => r.status === 'duplicate').length,
-      errors: results.filter((r) => r.status === 'error').length,
-      results,
+      total: syncResult.total,
+      synced: syncResult.synced,
+      duplicates: syncResult.duplicates,
+      errors: syncResult.errors,
+      results: syncResult.results,
     });
   });
 
@@ -241,11 +200,7 @@ export async function checkinRoutes(app: FastifyInstance, opts: CheckInRouteOpti
       });
     }
 
-    // Verify event belongs to tenant
-    const event = await getTenantEvent(prisma, event_id, user.tenant_id);
-    if (!event) return replyEventNotFound(reply);
-
-    const result = await checkInService.searchGuests(event_id, q);
+    const result = await checkInService.searchGuests(user.tenant_id, event_id, q);
 
     if (isServiceError(result)) {
       return reply.status(400).send({

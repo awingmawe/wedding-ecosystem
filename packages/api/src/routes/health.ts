@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@wedding/db';
 import { getCacheClient, getPubSubClient } from '../config/redis';
 import type { RealtimeServer } from '@wedding/realtime';
 

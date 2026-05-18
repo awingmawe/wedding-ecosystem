@@ -58,18 +58,22 @@ sequenceDiagram
 
 ```mermaid
 graph TB
-    Routes["Routes Layer<br/>(HTTP handlers, request parsing)"]
+    Routes["Routes Layer<br/>(Thin HTTP adapters, request parsing, auth hook)"]
     Middleware["Middleware Layer<br/>(Auth, CORS, Rate Limit, RBAC, Tenant Isolation)"]
-    Services["Service Layer<br/>(Business logic, validation)"]
+    Services["Service Layer<br/>(Business logic, slug/QR generation, PII encryption, deduplication)"]
+    Repositories["Repository Layer<br/>(Prisma adapters — all queries tenant-scoped via tenant_id)"]
     Plugins["Plugin Layer<br/>(Audit logger, response cache, security headers)"]
     Data["Data Layer<br/>(Prisma ORM, Redis client)"]
 
     Routes --> Middleware
     Middleware --> Services
-    Services --> Data
+    Services --> Repositories
+    Repositories --> Data
     Plugins -.->|cross-cutting| Routes
     Plugins -.->|cross-cutting| Services
 ```
+
+**Domain coverage**: Guest and CheckIn domains use the full Route → Service → Repository stack. Other domains (CMS, RSVP, Events) still call Prisma from the service layer directly — migration is ongoing.
 
 ### Frontend Architecture (per app)
 

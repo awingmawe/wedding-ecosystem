@@ -8,7 +8,7 @@
  * The service layer never touches Prisma directly.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@wedding/db';
 import { CheckInMethod, GuestGroup, GuestType } from '@wedding/shared';
 import type {
   CheckInRepository,
@@ -19,7 +19,7 @@ import type {
 } from '../services/checkin.service';
 
 export class PrismaCheckInRepository implements CheckInRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: PrismaClient) { }
 
   async findGuestById(guestId: string): Promise<GuestInfo | null> {
     const guest = await this.prisma.guest.findFirst({

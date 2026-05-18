@@ -457,6 +457,37 @@ export class CMSService {
     return sections;
   }
 
+  // --- Upload Media ---
+
+  /**
+   * Placeholder for media upload functionality
+   */
+  async uploadMedia(
+    eventId: string,
+    tenantId: string
+  ): Promise<{ url: string } | CMSServiceError> {
+    // Verify event exists and belongs to tenant
+    const event = await this.repository.findEventById(eventId, tenantId);
+    if (!event) {
+      return {
+        code: ErrorCode.NOT_FOUND,
+        message: 'Event tidak ditemukan',
+      };
+    }
+
+    // TODO: Implement real file upload via StorageService (presigned URL flow)
+    // For now, return a proper error in production or a placeholder in development
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction) {
+      return {
+        code: ErrorCode.UPLOAD_FAILED,
+        message: 'Upload belum diimplementasikan. Gunakan endpoint /cms/media/presigned-url.',
+      };
+    }
+
+    return { url: `/uploads/mock-${Date.now()}.jpg` };
+  }
+
   // --- Private Helpers ---
 
   /**
@@ -492,7 +523,7 @@ export class CMSService {
  * Type guard to check if a result is a CMSServiceError
  */
 export function isCMSError(
-  result: SectionRecord | SectionRecord[] | { success: boolean } | CMSServiceError
+  result: SectionRecord | SectionRecord[] | { success: boolean } | { url: string } | CMSServiceError
 ): result is CMSServiceError {
   return (
     'code' in result &&

@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest } from 'fastify';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@wedding/db';
 import { ScannerLane } from '@wedding/shared';
 import { getTenantEvent, replyEventNotFound } from '../repositories';
 

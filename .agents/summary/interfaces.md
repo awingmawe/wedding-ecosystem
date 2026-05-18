@@ -27,9 +27,10 @@ Base URL: `http://localhost:4000` (dev) / `https://api.domain.railway.app` (prod
 | GET    | `/guests`        | JWT  | List guests (paginated, filterable)            |
 | POST   | `/guests`        | JWT  | Create guest (auto-generates QR)               |
 | PUT    | `/guests/:id`    | JWT  | Update guest                                   |
-| GET    | `/guests/:id/qr` | JWT  | Get guest QR code                              |
-| GET    | `/guests/search` | JWT  | Search guests by name (query: `q`, `event_id`) |
-| POST   | `/guests/import` | JWT  | CSV bulk import (max 2000)                     |
+| DELETE | `/guests/:id`    | JWT  | Delete guest and associated QR code            |
+| GET    | `/guests/:id/qr` | JWT  | Get guest QR code (payload: `iv:ciphertext`)   |
+| GET    | `/guests/search` | JWT  | Search guests by name (query: `q` min 2 chars, `event_id`) |
+| POST   | `/guests/import` | JWT  | CSV bulk import (max 2000, headers: `nama`,`grup`,`telepon`,`email`) |
 
 ### Check-in (prefix: `/checkin`)
 

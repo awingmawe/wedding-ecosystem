@@ -10,7 +10,7 @@
  * Requirements: 1.2 (tenant isolation), 1.3 (cross-tenant rejection)
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@wedding/db';
 import { FastifyReply } from 'fastify';
 
 // --- Types ---

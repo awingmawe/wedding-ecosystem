@@ -12,6 +12,10 @@ import { GuestGroup, GuestType, DeliveryStatus } from '@wedding/shared';
 const GUESTS_PER_PAGE = 50;
 const AES_ALGORITHM = 'aes-256-cbc';
 const IV_LENGTH = 16;
+/** Minimum characters for guest name search */
+const MIN_SEARCH_CHARS = 3;
+/** Maximum search results returned */
+const MAX_SEARCH_RESULTS = 10;
 
 // --- Types ---
 
@@ -53,6 +57,7 @@ export interface GuestListItem {
   plus_one_count: number;
   phone: string | null;
   email: string | null;
+  invitation_url: string | null;
   delivery_status: DeliveryStatus;
   rsvp_status: string | null;
   check_in_status: boolean;
@@ -143,6 +148,23 @@ export interface GuestRepository {
   checkQRPayloadExists(payload: string): Promise<boolean>;
 
   findEventById(eventId: string, tenantId: string): Promise<{ id: string; slug: string } | null>;
+
+  /**
+   * Fetch all guest names for an event, used to pre-seed the duplicate-detection
+   * set before a bulk import so existing names are excluded from the batch.
+   */
+  findGuestNamesByEvent(eventId: string, tenantId: string): Promise<string[]>;
+
+  /**
+   * Case-insensitive partial name search within a specific event.
+   * Returns at most `limit` records.
+   */
+  searchGuestsByName(
+    query: string,
+    eventId: string,
+    tenantId: string,
+    limit: number
+  ): Promise<GuestRecord[]>;
 }
 
 // --- Guest Service ---
@@ -385,6 +407,36 @@ export class GuestService {
     );
   }
 
+  // --- Search Guests ---
+
+  /**
+   * Search guests by name within an event (Req 8.1 — guest-management variant)
+   * - Minimum 3 characters
+   * - Maximum 10 results
+   */
+  async searchGuests(
+    eventId: string,
+    tenantId: string,
+    query: string
+  ): Promise<GuestRecord[] | GuestServiceError> {
+    if (query.length < MIN_SEARCH_CHARS) {
+      return {
+        code: ErrorCode.VALIDATION_FAILED,
+        message: `Kata kunci pencarian minimal ${MIN_SEARCH_CHARS} karakter`,
+      };
+    }
+
+    const event = await this.repository.findEventById(eventId, tenantId);
+    if (!event) {
+      return {
+        code: ErrorCode.NOT_FOUND,
+        message: 'Event tidak ditemukan',
+      };
+    }
+
+    return this.repository.searchGuestsByName(query, eventId, tenantId, MAX_SEARCH_RESULTS);
+  }
+
   // --- QR Code Generation ---
 
   /**
@@ -515,4 +567,6 @@ export const GUEST_CONSTANTS = {
   GUESTS_PER_PAGE,
   AES_ALGORITHM,
   IV_LENGTH,
+  MIN_SEARCH_CHARS,
+  MAX_SEARCH_RESULTS,
 } as const;

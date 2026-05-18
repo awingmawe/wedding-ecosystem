@@ -1,6 +1,22 @@
+/**
+ * Guest route handlers — thin adapters over GuestService and GuestImportService.
+ *
+ * Routes handle only:
+ * - Input extraction and basic validation
+ * - Calling the service
+ * - Mapping service results to HTTP responses
+ *
+ * All business logic (slug generation, AES-256 QR encryption, PII handling,
+ * pagination, CSV parsing, duplicate detection) lives in GuestService /
+ * GuestImportService, backed by PrismaGuestRepository.
+ */
+
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest } from 'fastify';
-import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
+import { PrismaClient } from '@wedding/db';
+import { GuestService, isGuestError } from '../services/guest.service';
+import { bulkImportGuests } from '../services/guest-import.service';
+import { PrismaGuestRepository, getCurrentTenantEvent, replyEventNotFound } from '../repositories';
+import type { GuestGroup, GuestType } from '@wedding/shared';
 
 interface GuestRouteOptions extends FastifyPluginOptions {
   prisma: PrismaClient;
@@ -8,6 +24,13 @@ interface GuestRouteOptions extends FastifyPluginOptions {
 
 export async function guestRoutes(app: FastifyInstance, opts: GuestRouteOptions) {
   const { prisma } = opts;
+
+  // --- Wire up GuestService with its Prisma adapter ---
+  const repository = new PrismaGuestRepository(prisma);
+
+  const encryptionKey = process.env.AES_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || '';
+
+  const guestService = new GuestService({ repository, encryptionKey });
 
   // Auth hook for all guest routes
   app.addHook('onRequest', async (request, reply) => {
@@ -25,52 +48,38 @@ export async function guestRoutes(app: FastifyInstance, opts: GuestRouteOptions)
       include?: string;
     };
 
-    const page = parseInt(query.page || '1', 10);
-    const per_page = Math.min(parseInt(query.per_page || '50', 10), 50);
-    const skip = (page - 1) * per_page;
-
-    // Build where clause
-    const where: any = { tenant_id: user.tenant_id };
-    if (query.group) {
-      where.group = query.group;
+    // Resolve the current event for this tenant — all guest operations are
+    // scoped to an event, and tenants in this system map 1:1 with an event.
+    const event = await getCurrentTenantEvent(prisma, user.tenant_id);
+    if (!event) {
+      // Tenant has no events yet — return empty list rather than 404
+      return reply.send({ data: [], pagination: { page: 1, per_page: 50, total: 0, total_pages: 0 } });
     }
 
-    // Get total count
-    const total = await prisma.guest.count({ where });
-    const total_pages = Math.ceil(total / per_page);
-
-    // Get guests with related data
-    const guests = await prisma.guest.findMany({
-      where,
-      skip,
-      take: per_page,
-      orderBy: { created_at: 'desc' },
-      include: {
-        qr_codes: { where: { is_active: true }, take: 1 },
-        rsvps: { take: 1, orderBy: { submitted_at: 'desc' } },
-        check_ins: { take: 1 },
+    const result = await guestService.listGuests(
+      event.id,
+      user.tenant_id,
+      {
+        page: parseInt(query.page || '1', 10),
+        per_page: Math.min(parseInt(query.per_page || '50', 10), 50),
       },
-    });
+      {
+        group: query.group as GuestGroup | undefined,
+        status: query.status as 'belum_rsvp' | 'confirmed' | 'declined' | 'checked_in' | undefined,
+      }
+    );
 
-    const data = guests.map((guest) => ({
-      id: guest.id,
-      name: guest.name,
-      slug: guest.slug,
-      group: guest.group,
-      type: guest.type,
-      plus_one_count: guest.plus_one_count,
-      phone: guest.phone,
-      email: guest.email,
-      delivery_status: guest.delivery_status,
-      rsvp_status: guest.rsvps[0]?.attendance || null,
-      check_in_status: guest.check_ins.length > 0,
-      qr_active: guest.qr_codes.length > 0 && guest.qr_codes[0].is_active,
-    }));
+    if (isGuestError(result)) {
+      return reply.status(404).send({
+        success: false,
+        error: { code: result.code, message: result.message },
+      });
+    }
 
-    // If include=delivery_status, return in the format the notifications page expects
+    // Notifications page requests a flat delivery-status focused shape
     if (query.include === 'delivery_status') {
       return reply.send({
-        guests: guests.map((guest) => ({
+        guests: result.data.map((guest) => ({
           id: guest.id,
           name: guest.name,
           slug: guest.slug,
@@ -82,16 +91,14 @@ export async function guestRoutes(app: FastifyInstance, opts: GuestRouteOptions)
       });
     }
 
-    return reply.send({
-      data,
-      pagination: { page, per_page, total, total_pages },
-    });
+    return reply.send(result);
   });
 
   // POST /guests
   app.post('/', async (request: FastifyRequest, reply) => {
     const user = request.user!;
     const body = request.body as {
+      event_id?: string;
       name: string;
       group: string;
       phone?: string;
@@ -106,184 +113,73 @@ export async function guestRoutes(app: FastifyInstance, opts: GuestRouteOptions)
       });
     }
 
-    // Find event for this tenant
-    const event = await prisma.event.findFirst({
-      where: { tenant_id: user.tenant_id },
+    // Resolve event: use explicit event_id if provided, else fall back to
+    // the tenant's current event (single-event-per-tenant model)
+    let eventId = body.event_id;
+    if (!eventId) {
+      const event = await getCurrentTenantEvent(prisma, user.tenant_id);
+      if (!event) return replyEventNotFound(reply);
+      eventId = event.id;
+    }
+
+    const result = await guestService.addGuest(eventId, user.tenant_id, {
+      name: body.name,
+      group: body.group as GuestGroup,
+      type: 'invited' as GuestType,
+      phone: body.phone,
+      email: body.email,
+      plus_one_count: body.plus_one_count !== undefined ? Number(body.plus_one_count) : 0,
     });
 
-    if (!event) {
-      return reply.status(404).send({
+    if (isGuestError(result)) {
+      return reply.status(result.code === 'RES_5001' ? 404 : 400).send({
         success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
+        error: { code: result.code, message: result.message },
       });
     }
 
-    // Generate slug
-    const slug = body.name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
-
-    const guestId = randomUUID();
-    const invitationUrl = `/${event.slug}?to=${slug}`;
-
-    const guest = await prisma.guest.create({
-      data: {
-        id: guestId,
-        event_id: event.id,
-        tenant_id: user.tenant_id,
-        name: body.name,
-        slug,
-        phone: body.phone || null,
-        email: body.email || null,
-        group: body.group as any,
-        type: 'invited',
-        plus_one_count: body.plus_one_count || 0,
-        invitation_url: invitationUrl,
-        delivery_status: 'not_sent',
-      },
-    });
-
-    // Generate QR code
-    const qrPayload = `${guestId}:${event.id}:${Date.now()}`;
-    await prisma.qRCode.create({
-      data: {
-        id: randomUUID(),
-        guest_id: guestId,
-        qr_payload: qrPayload,
-        is_active: true,
-      },
-    });
-
-    return reply.status(201).send(guest);
+    return reply.status(201).send(result);
   });
 
   // PUT /guests/:id
   app.put('/:id', async (request: FastifyRequest, reply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
-    const body = request.body as Record<string, any>;
+    const body = request.body as Record<string, unknown>;
 
-    const guest = await prisma.guest.findFirst({
-      where: { id, tenant_id: user.tenant_id },
+    const result = await guestService.updateGuest(id, user.tenant_id, {
+      name: body.name as string | undefined,
+      group: body.group as GuestGroup | undefined,
+      phone: body.phone as string | undefined,
+      email: body.email as string | undefined,
+      plus_one_count: body.plus_one_count as number | undefined,
     });
 
-    if (!guest) {
+    if (isGuestError(result)) {
       return reply.status(404).send({
         success: false,
-        error: { code: 'GUEST_6001', message: 'Tamu tidak ditemukan' },
+        error: { code: result.code, message: result.message },
       });
     }
 
-    const updateData: any = {};
-    if (body.name !== undefined) updateData.name = body.name;
-    if (body.group !== undefined) updateData.group = body.group;
-    if (body.phone !== undefined) updateData.phone = body.phone || null;
-    if (body.email !== undefined) updateData.email = body.email || null;
-    if (body.plus_one_count !== undefined) updateData.plus_one_count = body.plus_one_count;
-
-    const updated = await prisma.guest.update({
-      where: { id },
-      data: updateData,
-    });
-
-    return reply.send(updated);
+    return reply.send(result);
   });
 
-  // POST /guests/import
-  app.post('/import', async (request: FastifyRequest, reply) => {
+  // DELETE /guests/:id
+  app.delete('/:id', async (request: FastifyRequest, reply) => {
     const user = request.user!;
-    const { csv_text } = request.body as { csv_text: string };
+    const { id } = request.params as { id: string };
 
-    if (!csv_text) {
-      return reply.status(400).send({
-        success: false,
-        error: { code: 'VAL_4001', message: 'CSV text diperlukan' },
-      });
-    }
+    const result = await guestService.deleteGuest(id, user.tenant_id);
 
-    const event = await prisma.event.findFirst({
-      where: { tenant_id: user.tenant_id },
-    });
-
-    if (!event) {
+    if (isGuestError(result)) {
       return reply.status(404).send({
         success: false,
-        error: { code: 'RES_5001', message: 'Event tidak ditemukan' },
+        error: { code: result.code, message: result.message },
       });
     }
 
-    // Parse CSV (simple: name,group,phone,email)
-    const lines = csv_text.trim().split('\n');
-    const header = lines[0].toLowerCase();
-    const dataLines = lines.slice(1);
-
-    const imported: any[] = [];
-    const errors: any[] = [];
-
-    for (let i = 0; i < dataLines.length; i++) {
-      const cols = dataLines[i].split(',').map((c) => c.trim());
-      const name = cols[0];
-      const group = cols[1] || 'friend';
-      const phone = cols[2] || null;
-      const email = cols[3] || null;
-
-      if (!name) {
-        errors.push({ row: i + 2, message: 'Nama kosong' });
-        continue;
-      }
-
-      const slug = name
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
-
-      const guestId = randomUUID();
-      try {
-        const guest = await prisma.guest.create({
-          data: {
-            id: guestId,
-            event_id: event.id,
-            tenant_id: user.tenant_id,
-            name,
-            slug: `${slug}-${i}`,
-            phone,
-            email,
-            group: (['family', 'friend', 'colleague', 'vip'].includes(group) ? group : 'friend') as any,
-            type: 'invited',
-            plus_one_count: 0,
-            invitation_url: `/${event.slug}?to=${slug}-${i}`,
-            delivery_status: 'not_sent',
-          },
-        });
-
-        // Generate QR
-        await prisma.qRCode.create({
-          data: {
-            id: randomUUID(),
-            guest_id: guestId,
-            qr_payload: `${guestId}:${event.id}:${Date.now()}:${i}`,
-            is_active: true,
-          },
-        });
-
-        imported.push(guest);
-      } catch (err: any) {
-        errors.push({ row: i + 2, message: err.message });
-      }
-    }
-
-    return reply.send({
-      imported: imported.length,
-      errors: errors.length,
-      details: errors,
-    });
+    return reply.send(result);
   });
 
   // GET /guests/:id/qr
@@ -291,53 +187,89 @@ export async function guestRoutes(app: FastifyInstance, opts: GuestRouteOptions)
     const user = request.user!;
     const { id } = request.params as { id: string };
 
-    const guest = await prisma.guest.findFirst({
-      where: { id, tenant_id: user.tenant_id },
-      include: { qr_codes: { where: { is_active: true }, take: 1 } },
-    });
+    const result = await guestService.getGuest(id, user.tenant_id);
 
-    if (!guest) {
+    if (isGuestError(result)) {
       return reply.status(404).send({
         success: false,
-        error: { code: 'GUEST_6001', message: 'Tamu tidak ditemukan' },
+        error: { code: result.code, message: result.message },
       });
     }
 
-    const qr = guest.qr_codes[0];
+    const qr = result.qr_code;
     return reply.send({
-      qr_image_url: qr?.qr_image_url || null,
-      qr_payload: qr?.qr_payload || null,
-      is_active: qr?.is_active || false,
+      qr_image_url: qr?.qr_image_url ?? null,
+      qr_payload: qr?.qr_payload ?? null,
+      is_active: qr?.is_active ?? false,
     });
   });
 
   // GET /guests/search
   app.get('/search', async (request: FastifyRequest, reply) => {
     const user = request.user!;
-    const query = request.query as { q?: string; event_id?: string };
+    const { q, event_id } = request.query as { q?: string; event_id?: string };
 
-    if (!query.q || query.q.length < 3) {
+    if (!q) {
       return reply.status(400).send({
         success: false,
-        error: { code: 'VAL_4001', message: 'Kata kunci pencarian minimal 3 karakter' },
+        error: { code: 'VAL_4001', message: 'Parameter q diperlukan' },
       });
     }
 
-    const where: any = {
-      tenant_id: user.tenant_id,
-      name: { contains: query.q, mode: 'insensitive' },
-    };
-
-    if (query.event_id) {
-      where.event_id = query.event_id;
+    // Resolve event context
+    let eventId = event_id;
+    if (!eventId) {
+      const event = await getCurrentTenantEvent(prisma, user.tenant_id);
+      if (!event) return replyEventNotFound(reply);
+      eventId = event.id;
     }
 
-    const guests = await prisma.guest.findMany({
-      where,
-      take: 10,
-      orderBy: { name: 'asc' },
-    });
+    const result = await guestService.searchGuests(eventId, user.tenant_id, q);
 
-    return reply.send({ data: guests });
+    if (!Array.isArray(result) && isGuestError(result)) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: result.code, message: result.message },
+      });
+    }
+
+    return reply.send({ data: result });
+  });
+
+  // POST /guests/import
+  app.post('/import', async (request: FastifyRequest, reply) => {
+    const user = request.user!;
+    const body = request.body as { csv_text?: string; event_id?: string };
+
+    if (!body.csv_text) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'VAL_4001', message: 'csv_text diperlukan' },
+      });
+    }
+
+    // Resolve event context
+    let eventId = body.event_id;
+    if (!eventId) {
+      const event = await getCurrentTenantEvent(prisma, user.tenant_id);
+      if (!event) return replyEventNotFound(reply);
+      eventId = event.id;
+    }
+
+    // Pre-fetch existing guest names so the import can exclude duplicates
+    // against names already in the event, not just within the batch.
+    const existingNames = await repository.findGuestNamesByEvent(eventId, user.tenant_id);
+
+    const report = await bulkImportGuests(
+      { eventId, tenantId: user.tenant_id, csvText: body.csv_text },
+      guestService,
+      existingNames
+    );
+
+    return reply.send({
+      imported: report.successCount,
+      errors: report.failedRows.length,
+      details: report.failedRows,
+    });
   });
 }

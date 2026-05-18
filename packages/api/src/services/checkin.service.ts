@@ -60,6 +60,26 @@ export interface GoShowResult {
   check_in: CheckInRecord;
 }
 
+export interface SyncRecordInput {
+  guest_id: string;
+  event_id: string;
+  method: string;
+  checked_in_at: string;
+  scanner_device_id?: string;
+}
+
+export interface SyncRecordsResult {
+  total: number;
+  synced: number;
+  duplicates: number;
+  errors: number;
+  results: Array<{
+    guest_id: string;
+    status: 'synced' | 'duplicate' | 'error';
+    message?: string;
+  }>;
+}
+
 export interface CheckInServiceError {
   code: ErrorCode;
   message: string;
@@ -171,10 +191,23 @@ export class CheckInService {
    * Validates: Requirements 7.1, 7.2, 7.3, 7.4, 7.5, 7.8, 12.5
    */
   async verifyQRScan(
+    tenantId: string,
     qrPayload: string,
     eventId: string,
     scannerDeviceId: string | null = null
   ): Promise<ScanVerificationResult> {
+    // Verify event belongs to tenant
+    const event = await this.repository.findEventById(eventId);
+    if (!event || event.tenant_id !== tenantId) {
+      return {
+        status: VerificationStatus.RED,
+        guest_name: null,
+        guest_group: null,
+        message: 'Event tidak ditemukan',
+        checked_in_at: null,
+      };
+    }
+
     // Step 1: Decrypt QR payload
     const decryptResult = this.decryptQRPayload(qrPayload);
     if (!decryptResult) {
@@ -241,7 +274,7 @@ export class CheckInService {
     }
 
     // Step 5: First check-in — create DB record (GREEN)
-    const checkInId = crypto.randomUUID();
+    const checkInId = randomUUID();
     await this.repository.createCheckIn({
       id: checkInId,
       guest_id: guestId,
@@ -266,6 +299,7 @@ export class CheckInService {
    * - Maximum 10 results with check-in status
    */
   async searchGuests(
+    tenantId: string,
     eventId: string,
     query: string
   ): Promise<GuestSearchResult[] | CheckInServiceError> {
@@ -277,9 +311,9 @@ export class CheckInService {
       };
     }
 
-    // Verify event exists
+    // Verify event exists and belongs to tenant
     const event = await this.repository.findEventById(eventId);
-    if (!event) {
+    if (!event || event.tenant_id !== tenantId) {
       return {
         code: ErrorCode.NOT_FOUND,
         message: 'Event tidak ditemukan',
@@ -304,13 +338,14 @@ export class CheckInService {
    * - Broadcasts via WebSocket (Req 8.8)
    */
   async manualCheckIn(
+    tenantId: string,
     guestId: string,
     eventId: string,
     scannerDeviceId?: string | null
   ): Promise<ManualCheckInResult | CheckInServiceError> {
-    // Verify event exists
+    // Verify event exists and belongs to tenant
     const event = await this.repository.findEventById(eventId);
-    if (!event) {
+    if (!event || event.tenant_id !== tenantId) {
       return {
         code: ErrorCode.NOT_FOUND,
         message: 'Event tidak ditemukan',
@@ -369,6 +404,7 @@ export class CheckInService {
    * - Broadcasts via WebSocket (Req 8.8)
    */
   async registerGoShow(
+    tenantId: string,
     name: string,
     eventId: string,
     scannerDeviceId?: string | null
@@ -381,9 +417,9 @@ export class CheckInService {
       };
     }
 
-    // Verify event exists
+    // Verify event exists and belongs to tenant
     const event = await this.repository.findEventById(eventId);
-    if (!event) {
+    if (!event || event.tenant_id !== tenantId) {
       return {
         code: ErrorCode.NOT_FOUND,
         message: 'Event tidak ditemukan',
@@ -425,6 +461,43 @@ export class CheckInService {
     }
 
     return { guest, check_in: checkIn };
+  }
+
+  /**
+   * Sync offline check-in records
+   */
+  async syncOfflineRecords(
+    tenantId: string,
+    records: SyncRecordInput[]
+  ): Promise<SyncRecordsResult> {
+    const results: SyncRecordsResult['results'] = [];
+
+    for (const record of records) {
+      const syncResult = await this.manualCheckIn(
+        tenantId,
+        record.guest_id,
+        record.event_id,
+        record.scanner_device_id || null
+      );
+
+      if (isServiceError(syncResult)) {
+        if (syncResult.code === ErrorCode.ALREADY_CHECKED_IN) {
+          results.push({ guest_id: record.guest_id, status: 'duplicate' });
+        } else {
+          results.push({ guest_id: record.guest_id, status: 'error', message: syncResult.message });
+        }
+      } else {
+        results.push({ guest_id: record.guest_id, status: 'synced' });
+      }
+    }
+
+    return {
+      total: records.length,
+      synced: results.filter((r) => r.status === 'synced').length,
+      duplicates: results.filter((r) => r.status === 'duplicate').length,
+      errors: results.filter((r) => r.status === 'error').length,
+      results,
+    };
   }
 
   /**
