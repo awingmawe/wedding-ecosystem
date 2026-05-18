@@ -178,7 +178,7 @@ describe('Property 11: Check-in Idempotency', () => {
           // Perform multiple check-in attempts sequentially
           const results = [];
           for (let i = 0; i < attemptCount; i++) {
-            const result = await service.verifyQRScan(qrPayload, eventId);
+            const result = await service.verifyQRScan('tenant-001', qrPayload, eventId);
             results.push(result);
           }
 
@@ -237,8 +237,8 @@ describe('Property 11: Check-in Idempotency', () => {
 
           // Simulate concurrent scans from 2 devices
           const [result1, result2] = await Promise.all([
-            service.verifyQRScan(qrPayload, eventId, scanner1Id),
-            service.verifyQRScan(qrPayload, eventId, scanner2Id),
+            service.verifyQRScan('tenant-001', qrPayload, eventId, scanner1Id),
+            service.verifyQRScan('tenant-001', qrPayload, eventId, scanner2Id),
           ]);
 
           // Property: exactly one check-in record exists
@@ -291,11 +291,11 @@ describe('Property 11: Check-in Idempotency', () => {
           const qrPayload = createValidQRPayload(guestId, eventId);
 
           // First: QR scan check-in (should succeed with GREEN)
-          const qrResult = await service.verifyQRScan(qrPayload, eventId);
+          const qrResult = await service.verifyQRScan('tenant-001', qrPayload, eventId);
           expect(qrResult.status).toBe(VerificationStatus.GREEN);
 
           // Second: manual check-in attempt (should be rejected)
-          const manualResult = await service.manualCheckIn(guestId, eventId);
+          const manualResult = await service.manualCheckIn('tenant-001', guestId, eventId);
 
           // Property: manual check-in is rejected because guest is already checked in
           expect('code' in manualResult).toBe(true);
@@ -349,9 +349,9 @@ describe('Property 11: Check-in Idempotency', () => {
           // Mix of QR scans and manual check-in attempts
           for (let i = 0; i < totalAttempts; i++) {
             if (i % 2 === 0) {
-              await service.verifyQRScan(qrPayload, eventId, `scanner-${i}`);
+              await service.verifyQRScan('tenant-001', qrPayload, eventId, `scanner-${i}`);
             } else {
-              await service.manualCheckIn(guestId, eventId, `scanner-${i}`);
+              await service.manualCheckIn('tenant-001', guestId, eventId, `scanner-${i}`);
             }
           }
 
