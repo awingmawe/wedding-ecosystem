@@ -190,6 +190,16 @@
 
 - `GET /health` — Returns status of PostgreSQL, Redis, WebSocket
 
+### Platform Admin (Auth required + Admin role)
+
+- `GET /admin/stats` — Get global platform KPIs
+- `GET /admin/tenants` — List all tenants (paginated, search, filter)
+- `POST /admin/tenants` — Create a new tenant with master client credentials
+- `PATCH /admin/tenants/:id/status` — Toggle tenant active/inactive status
+- `GET /admin/users` — List all users across the platform (paginated, search, role filters)
+- `PUT /admin/users/:id/reset-password` — Generate and reset user password with secure random string
+- `GET /admin/audit-logs` — List platform-wide system audit logs with pagination, search, and type filtering
+
 ---
 
 ## WebSocket Events

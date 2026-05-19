@@ -8,6 +8,7 @@ Platform multi-tenant untuk manajemen undangan pernikahan digital, menargetkan p
 
 - [Arsitektur](#arsitektur)
 - [Spesifikasi Aplikasi](#spesifikasi-aplikasi)
+- [Peran & Hak Akses](#peran--hak-akses)
 - [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
 - [Setup Local Development](#setup-local-development)
@@ -148,6 +149,79 @@ Single Fastify server yang menangani REST API dan WebSocket.
 | Room Authorization | Tenant-scoped room access                                    |
 | Redis Adapter      | Ready untuk horizontal scaling                               |
 | Graceful Shutdown  | Notify clients, drain connections                            |
+
+## Peran & Hak Akses (Roles & Permissions)
+
+Sistem ini menggunakan **Role-Based Access Control (RBAC)** untuk membatasi akses fitur dan data berdasarkan peran masing-masing pengguna. Dilengkapi dengan isolasi *multi-tenant* di tingkat basis data, setiap pengguna (selain Admin Global) hanya dapat mengakses data yang berhak mereka lihat.
+
+Berikut adalah spesifikasi lengkap hak akses untuk masing-masing peran (*role*):
+
+### 1. Admin (Global Administrator)
+* **Deskripsi**: Administrator platform yang memiliki kendali penuh secara global terhadap seluruh ekosistem aplikasi.
+* **Lingkup Kerja (Scope)**: Global (Lintas seluruh tenant dan seluruh data sistem).
+* **Dapat Melakukan (Allowed)**:
+  * Melakukan pendaftaran, edit, dan penghapusan tenant baru (*Multi-Tenant Management*).
+  * Melakukan CRUD penuh terhadap seluruh resource database (User, Tenant, Event, Tamu, dsb.).
+  * Mengakses dashboard global dan memantau status kesehatan sistem secara menyeluruh.
+  * Mengonfigurasi pengaturan sistem global dan mengelola lisensi client.
+* **Tidak Dapat Melakukan (Restricted)**:
+  * — (Tidak ada batasan hak akses / Super User).
+
+### 2. Client (Wedding Owner / Penyelenggara)
+* **Deskripsi**: Akun pemilik/penyelenggara pernikahan yang menyewa tenant pada platform.
+* **Lingkup Kerja (Scope)**: Tenant Milik Sendiri (Hanya dapat mengakses data dalam tenant mereka sendiri).
+* **Dapat Melakukan (Allowed)**:
+  * Membuat, memperbarui, dan menghapus event pernikahan di dalam tenant milik sendiri.
+  * Mengelola daftar tamu secara penuh (CRUD tamu, generate otomatis QR Code, ekspor data, dan import bulk via CSV).
+  * Mengonfigurasi CMS Undangan (mengaktifkan/menonaktifkan dan menyusun ulang urutan 14 section undangan).
+  * Memilih preset warna tema undangan dan melakukan kustomisasi warna hex.
+  * Mengirimkan broadcast notifikasi undangan secara massal (batch max 500 tamu).
+  * Memantau real-time RSVP (kehadiran & pax) dan melihat statistik check-in tamu di hari-H secara real-time via WebSocket.
+* **Tidak Dapat Melakukan (Restricted)**:
+  * Mengakses, melihat, atau memodifikasi data dari tenant/client lain (*strict multi-tenant isolation*).
+  * Membuat tenant baru atau mengelola akun Admin lainnya.
+  * Mendaftarkan scanner device melebihi batas kuota (maksimal 2 device aktif per event).
+
+### 3. WO (Wedding Organizer)
+* **Deskripsi**: Peran operasional pihak ketiga yang ditugaskan oleh Client untuk membantu jalannya acara pernikahan.
+* **Lingkup Kerja (Scope)**: Event yang Ditugaskan (*Assigned Events*).
+* **Dapat Melakukan (Allowed)**:
+  * Mengelola daftar tamu untuk event yang ditugaskan kepadanya (tambah tamu, update info RSVP, dsb.).
+  * Memantau jalannya check-in tamu secara real-time di hari-H melalui dashboard WO.
+  * Melihat statistik kehadiran, ringkasan RSVP, dan laporan Check-in tamu.
+* **Tidak Dapat Melakukan (Restricted)**:
+  * Membuat event pernikahan baru atau menghapus event yang sudah ada.
+  * Mengonfigurasi CMS Undangan atau merubah pengaturan tema/desain undangan.
+  * Mengirimkan broadcast notifikasi undangan massal.
+  * Mengakses data event atau data tamu dari client/tenant lain yang tidak ditugaskan kepadanya.
+
+### 4. Scanner Operator (Petugas Venue)
+* **Deskripsi**: Operator di lokasi acara (hari-H) yang bertugas melakukan verifikasi kehadiran fisik tamu di pintu masuk.
+* **Lingkup Kerja (Scope)**: Satu Event Spesifik pada Hari-H (*Assigned Active Event*).
+* **Dapat Melakukan (Allowed)**:
+  * Melakukan verifikasi QR Code tamu menggunakan kamera device (respon cepat < 2 detik).
+  * Melakukan check-in manual dengan mencari nama tamu (minimal 3 karakter) jika tamu tidak membawa QR Code.
+  * Mendaftarkan tamu dadakan (*Go-Show*) langsung di lokasi acara (hari-H) tanpa generate QR Code, dan langsung tercatat sebagai checked-in.
+  * Menyimpan data scan secara lokal di IndexedDB saat offline, dan melakukan sinkronisasi otomatis (*automatic sync*) ke server ketika koneksi pulih (dengan aturan *Server Wins* jika terjadi konflik).
+  * Mendaftarkan device scanner (maksimal 2 device aktif per event untuk menghindari antrean ganda di gerbang yang sama).
+* **Tidak Dapat Melakukan (Restricted)**:
+  * Mengubah informasi tamu yang sudah terdaftar sebelumnya (selain mencatat status check-in).
+  * Menghapus tamu dari daftar.
+  * Mengedit konfigurasi CMS Undangan, detail acara, maupun tema undangan.
+  * Melakukan broadcast pengiriman undangan.
+
+### 5. Tamu (Guest)
+* **Deskripsi**: Penerima undangan digital pernikahan.
+* **Lingkup Kerja (Scope)**: Halaman Undangan Publik yang Dipersonalisasi via URL (`/{event-slug}?to={guest-slug}`).
+* **Dapat Melakukan (Allowed)**:
+  * Mengakses halaman undangan digital yang menampilkan sapaan nama mereka secara personal di bagian cover.
+  * Mengisi formulir RSVP (konfirmasi kehadiran pada Akad, Resepsi, Keduanya, atau Tidak Hadir beserta jumlah pax).
+  * Mengirimkan ucapan selamat, doa restu, atau pesan (*wishes/messages*) kepada kedua mempelai.
+  * Melihat 14 section informasi pernikahan (kisah cinta, galeri foto, video prewedding, info dress code, koordinat peta venue, hitung mundur acara, dan info amplop digital/kado).
+* **Tidak Dapat Melakukan (Restricted)**:
+  * Mengakses halaman dashboard admin ataupun dashboard WO (memerlukan autentikasi JWT).
+  * Mengakses aplikasi scanner check-in tamu.
+  * Melihat data tamu lain atau pesan yang bersifat privat.
 
 ---
 

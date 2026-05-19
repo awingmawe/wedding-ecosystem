@@ -16,9 +16,9 @@ apps/
 packages/
 ├── api/              → Fastify REST + WebSocket server (port 4000)
 │   └── src/
-│       ├── routes/      → Thin HTTP adapters (auth, guests, events, checkin, rsvp, cms, scanner, messages, notifications, invitations, health)
-│       ├── services/    → Business logic (11 services; no direct Prisma calls)
-│       ├── repositories/ → Data-access layer — Prisma adapters, all queries tenant-scoped (guest, checkin)
+│       ├── routes/      → Thin HTTP adapters (auth, guests, events, checkin, rsvp, cms, scanner, messages, notifications, invitations, health, admin)
+│       ├── services/    → Business logic (12 services; no direct Prisma calls)
+│       ├── repositories/ → Data-access layer — Prisma adapters, queries tenant-scoped (guest, checkin) or global admin (admin)
 │       ├── middleware/  → CORS, rate-limit, RBAC, tenant-isolation, encryption, input-validation
 │       └── plugins/     → audit-logger, response-cache, security-headers
 ├── db/               → Prisma 7 schema (12 models, 10 enums), migrations, client factory

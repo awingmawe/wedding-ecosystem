@@ -71,6 +71,8 @@ graph TB
 | `MediaUploadService` | `media-upload.service.ts` | File validation, virus scanning, cloud storage upload |
 | `StorageService` | `storage.ts` | R2 client, signed URLs, tenant quota management |
 | `GuestImportService` | `guest-import.service.ts` | CSV parsing, bulk import (max 2000 rows), cross-batch deduplication by name within event |
+| `AdminService` | `admin.service.ts` | Platform admin features: platform KPIs, tenant management, user listing, password resets, system audit logs |
+
 
 #### Middleware Stack
 
@@ -143,6 +145,11 @@ graph TB
         Theme["theme/page.tsx"]
         RSVP["rsvp/page.tsx"]
         Notifications["notifications/page.tsx"]
+        AdminLayout["admin/layout.tsx"]
+        AdminOverview["admin/overview/page.tsx"]
+        AdminTenants["admin/tenants/page.tsx"]
+        AdminUsers["admin/users/page.tsx"]
+        AdminAudit["admin/audit-logs/page.tsx"]
     end
 
     subgraph "Key Components"

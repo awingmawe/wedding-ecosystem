@@ -18,6 +18,7 @@ import { cmsRoutes } from './routes/cms';
 import { scannerRoutes } from './routes/scanner';
 import { messageRoutes } from './routes/messages';
 import { healthRoutes } from './routes/health';
+import { adminRoutes } from './routes/admin';
 import {
   createAuthMiddleware,
   createCORSMiddleware,
@@ -66,7 +67,7 @@ const app = Fastify({
 app.register(securityHeaders);
 
 // --- Audit Logger Plugin (Req 12.10) ---
-app.register(auditLogger);
+app.register(auditLogger, { prisma });
 
 // --- Response Cache Plugin (Req 14.3) ---
 // Gracefully degrades when Redis is unavailable
@@ -160,6 +161,7 @@ app.register(eventRoutes, { prefix: '/events', prisma });
 app.register(notificationRoutes, { prefix: '/notifications', prisma });
 app.register(cmsRoutes, { prefix: '/cms', prisma });
 app.register(scannerRoutes, { prefix: '/scanner', prisma });
+app.register(adminRoutes, { prefix: '/admin', prisma });
 
 // Routes that need realtime broadcasting
 app.register(async (instance) => {

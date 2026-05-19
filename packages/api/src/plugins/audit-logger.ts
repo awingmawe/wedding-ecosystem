@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
+import { PrismaClient } from '@wedding/db';
 
 // --- Types ---
 
@@ -32,6 +33,8 @@ export interface AuditLoggerOptions {
    *  Each entry maps a method + URL prefix to an action name.
    */
   autoLogRoutes?: AutoLogRoute[];
+  /** Optional PrismaClient instance for database-backed audit logging */
+  prisma?: PrismaClient;
 }
 
 export interface AutoLogRoute {
@@ -132,8 +135,8 @@ export function matchAutoLogRoute(
  * 1. A `fastify.auditLog(request, action, metadata?)` decorator for manual audit logging
  * 2. Automatic hook-based audit logging for configured route patterns (login, logout, etc.)
  *
- * Audit entries are structured JSON logged via Fastify's built-in logger at 'info' level.
- * Each entry includes: timestamp, user_id, tenant_id, action, request_id, and optional metadata.
+ * Audit entries are structured JSON logged via Fastify's built-in logger at 'info' level,
+ * and written to the database asynchronously if a PrismaClient instance is provided.
  *
  * Validates: Requirements 12.10
  */
@@ -143,6 +146,7 @@ const auditLoggerPlugin: FastifyPluginCallback<AuditLoggerOptions> = (
   done
 ) => {
   const autoLogRoutes = opts.autoLogRoutes ?? DEFAULT_AUTO_LOG_ROUTES;
+  const prisma = opts.prisma;
 
   // Decorator: allows route handlers to manually log audit entries
   fastify.decorate(
@@ -150,6 +154,21 @@ const auditLoggerPlugin: FastifyPluginCallback<AuditLoggerOptions> = (
     function (request: FastifyRequest, action: AuditAction, metadata?: Record<string, unknown>) {
       const entry = buildAuditEntry(request, action, metadata);
       request.log.info({ audit: entry }, `audit: ${action}`);
+
+      if (prisma) {
+        prisma.auditLog.create({
+          data: {
+            timestamp: new Date(entry.timestamp),
+            user_id: entry.user_id,
+            tenant_id: entry.tenant_id,
+            action: entry.action,
+            request_id: entry.request_id,
+            metadata: entry.metadata ? (entry.metadata as any) : undefined,
+          },
+        }).catch((err: any) => {
+          request.log.error({ err }, 'Gagal menyimpan log audit ke database');
+        });
+      }
     }
   );
 
@@ -164,8 +183,7 @@ const auditLoggerPlugin: FastifyPluginCallback<AuditLoggerOptions> = (
     // Only log successful operations (2xx/3xx status codes)
     const statusCode = reply.statusCode;
     if (statusCode >= 200 && statusCode < 400) {
-      const entry = buildAuditEntry(request, action);
-      request.log.info({ audit: entry }, `audit: ${action}`);
+      fastify.auditLog(request, action);
     }
   });
 

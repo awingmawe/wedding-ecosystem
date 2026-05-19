@@ -95,6 +95,18 @@ Base URL: `http://localhost:4000` (dev) / `https://api.domain.railway.app` (prod
 | ------ | --------- | ---- | -------------------------------------------- |
 | GET    | `/health` | None | System health (PostgreSQL, Redis, WebSocket) |
 
+### Platform Admin (prefix: `/admin`)
+
+| Method | Endpoint                          | Auth             | Description                                                   |
+| ------ | --------------------------------- | ---------------- | ------------------------------------------------------------- |
+| GET    | `/admin/stats`                    | JWT (Admin role) | Get global platform KPIs (tenants, users, devices, guests)    |
+| GET    | `/admin/tenants`                  | JWT (Admin role) | List all tenants (paginated, search, subscription filter)     |
+| POST   | `/admin/tenants`                  | JWT (Admin role) | Create a new tenant with master client credentials            |
+| PATCH  | `/admin/tenants/:id/status`       | JWT (Admin role) | Toggle tenant active/inactive status                          |
+| GET    | `/admin/users`                    | JWT (Admin role) | List all users across the platform (paginated, role filters)  |
+| PUT    | `/admin/users/:id/reset-password` | JWT (Admin role) | Reset user password with secure random string                 |
+| GET    | `/admin/audit-logs`               | JWT (Admin role) | List system audit logs (paginated, search, filter by action)  |
+
 ## API Response Format
 
 ```mermaid

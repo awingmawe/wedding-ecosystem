@@ -104,11 +104,18 @@ export function createTenantIsolationMiddleware(config: { jwtSecret: string }) {
 /**
  * Creates a tenant-scoped filter object for database queries.
  * Ensures all queries are automatically filtered by tenant_id (Req 1.2).
+ * Admin role bypasses the tenant filter to query globally.
  */
-export function tenantFilter(request: FastifyRequest): { tenant_id: string } {
+export function tenantFilter(request: FastifyRequest): { tenant_id?: string } {
   const user = (request as any).user;
-  if (!user || !user.tenant_id) {
+  if (!user) {
     throw new Error('Tenant context not available. Ensure auth middleware is applied.');
+  }
+  if (user.role === 'admin') {
+    return {};
+  }
+  if (!user.tenant_id) {
+    throw new Error('Tenant ID not available in user context.');
   }
   return { tenant_id: user.tenant_id };
 }
@@ -117,6 +124,7 @@ export function tenantFilter(request: FastifyRequest): { tenant_id: string } {
  * Validates that a resource belongs to the requesting tenant.
  * Returns false if the resource's tenant_id doesn't match the request's tenant_id.
  * Used to enforce cross-tenant access rejection (Req 1.3).
+ * Admin role bypasses this validation.
  *
  * IMPORTANT: When this returns false, respond with 403 Forbidden
  * without revealing whether the resource exists.
@@ -126,8 +134,11 @@ export function validateTenantOwnership(
   resourceTenantId: string
 ): boolean {
   const user = (request as any).user;
-  if (!user || !user.tenant_id) {
+  if (!user) {
     return false;
+  }
+  if (user.role === 'admin') {
+    return true;
   }
   return user.tenant_id === resourceTenantId;
 }

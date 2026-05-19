@@ -15,6 +15,7 @@ erDiagram
     Guest ||--o{ RSVP : submits
     Guest ||--o{ CheckIn : records
     ScannerDevice ||--o{ CheckIn : performs
+    Tenant ||--o{ AuditLog : logs
 ```
 
 ## Models
@@ -198,6 +199,22 @@ Guest message/wish for the couple (public submission).
 | `is_visible` | Boolean | Default: `true` | Moderation flag |
 
 **Indexes**: `[event_id]`
+
+### AuditLog
+
+System activity and audit log for sensitive operations.
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | UUID | PK | Unique identifier |
+| `timestamp` | DateTime | Default: `now()` | Log entry timestamp |
+| `user_id` | UUID? | FK → User | User who performed the action |
+| `tenant_id` | UUID? | FK → Tenant | Associated tenant |
+| `action` | String | Required | Action performed (e.g., `AUTH_LOGIN`, `USER_RESET_PASSWORD`) |
+| `request_id` | String | Required | HTTP Request UUID |
+| `metadata` | JSON? | Optional | Additional details (IP, user agent, changes) |
+
+**Indexes**: `[timestamp]`, `[tenant_id]`, `[user_id]`, `[action]`
 
 ## Enums
 
